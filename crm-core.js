@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.2.0
+ * Gapsy CRM · crm-core.js v0.3.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'projects', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'projects', 'project', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -390,7 +390,7 @@
   // ===================================================================
   // ПОШУК Cmd+K
   // ===================================================================
-  const KIND = { project: 'Проєкт', feedback: 'Правка', showcase: 'Showcase', doc: 'Документ' };
+  const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', showcase: 'Showcase', doc: 'Документ' };
   let searchInput = null;
   let searchTimer = null;
   function openSearch() {

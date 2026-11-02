@@ -1,6 +1,6 @@
 /* Gapsy CRM · modules/projects.js — Проєкти (/projects)
  * Розмітка: [data-element="projects"], таби data-tabs="status", список data-list="projects", форма data-form="project".
- * Клік по проєкту → правки цього проєкту. Shift+клік (PM/admin) → редагування. */
+ * Клік по проєкту → картка проєкту (/project?id=). Shift+клік (PM/admin) → редагування. */
 CRM.module('projects', (root, { sb, render, onSubmit, modal, toast, badge, can }) => {
   const STATUS = { active: ['Активний', 'is-blue'], paused: ['Пауза', 'is-yellow'], done: ['Завершений', 'is-green'] };
   const plural = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'правка' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'правки' : 'правок'}`;
@@ -24,7 +24,7 @@ CRM.module('projects', (root, { sb, render, onSubmit, modal, toast, badge, can }
       client: p.client || '—',
       feedback_count: plural(p.feedback?.[0]?.count || 0),
     })), (el, p) => {
-      el.href = `/feedback?project=${p.id}`;
+      el.href = `/project?id=${p.id}`;
       badge(el.querySelector('[data-field="status"]'), p.status, STATUS);
       if (can('admin,pm')) {
         el.title = 'Shift+клік — редагувати';

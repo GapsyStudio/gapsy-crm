@@ -7,9 +7,10 @@ CRM.module('profile', (root, { sb, user, profile, onSubmit, toast, action, uploa
 
   onSubmit('profile', async (d) => {
     const full_name = (d.full_name || '').trim() || null;
-    const { error } = await sb.from('profiles').update({ full_name }).eq('id', user.id);
+    // .select() повертає оновлений рядок: якщо RLS нічого не оновив, побачимо помилку, а не фальшиве «збережено»
+    const { data, error } = await sb.from('profiles').update({ full_name }).eq('id', user.id).select('full_name').single();
     if (error) throw error;
-    CRM.profile.full_name = full_name;
+    CRM.profile.full_name = data.full_name;
     bindUser();
     toast('Профіль збережено');
   });

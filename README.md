@@ -79,3 +79,28 @@ Webflow-блоки Success/Error форми входу не використов
 3. Невірний пароль → текст помилки під формою, зникає при введенні; Webflow не показує свій Success.
 4. Вихід в одній вкладці → інша вкладка на `/app` сама йде на `/login`.
 5. Елемент з `data-crm-role="admin"` відсутній у DOM для designer.
+
+## v0.2.0 — оболонка і перші модулі
+
+Нові файли:
+```
+002_modules.sql       проєкти, Showcase, правки (+скріни, коментарі), закріплене, сповіщення, Storage, пошук
+crm-core.js           ядро v0.2.0: модалки, таби, тема, Cmd+K, сповіщення, toast, форми, дропзона
+modules/*.js          dashboard, projects, showcase, feedback, feedback-item, admin, profile
+```
+
+### Порядок оновлення
+1. **Supabase → SQL Editor:** вставити весь `002_modules.sql` → Run (один раз). Має бути «Success».
+2. **GitHub:** замінити `crm-core.js` у корені (Add file → Upload files).
+3. **Папка `modules/`:** Add file → Create new file → у назві `modules/README.md`, текст будь-який → Commit.
+   Відкрити папку `modules` → Add file → Upload files → перетягнути 7 файлів `.js` → Commit.
+4. **Releases → Create a new release → тег `v0.2.0` → Publish.**
+5. Перевірити: `https://cdn.jsdelivr.net/gh/GapsyStudio/gapsy-crm@v0.2.0/modules/feedback.js` відкривається.
+6. Написати Claude «v0.2.0 готовий» — він перемкне Head сайту на нову версію і опублікує.
+
+### Конвенції модулів
+- `CRM.render(key, rows, fill)` — рендер списку за `[data-template]` у `[data-list="key"]`.
+- Поля шаблону: `data-field` (текст), `data-field-src` (img), `data-field-href` (посилання), `data-field-bg` (фон, аватари).
+- `CRM.onSubmit('form-key', async (data, form) => …)` — для `[data-form="form-key"]`.
+- `CRM.action('name', (el) => …)` — для `data-action="name"`.
+- Файли: bucket `media` (приватний, signed URL на 1 год), `avatars` (публічний, папка = id користувача).

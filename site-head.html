@@ -1,0 +1,26 @@
+<!-- =====================================================================
+  Gapsy CRM · Site Settings → Custom Code → Head
+  Конфіг + анти-спалах (сторінка прихована, поки crm-core не перевірить доступ).
+  JS-ядро: GapsyStudio/gapsy-crm → src/crm-core.js (jsDelivr, підключено нижче).
+  Шаблонний <meta facebook-domain-verification> зі стартера видали.
+====================================================================== -->
+<script>
+  window.CRM_CONFIG = {
+    url: 'https://haovkojaovuiwhsneiky.supabase.co',
+    anonKey: 'sb_publishable_ZJoKWiBGHZyfj9LWgtmHvw_Jp2sOkF9', // publishable (публічний). Ніколи не sb_secret_ / service_role!
+    loginPath: '/login',
+    homePath: '/app',
+    pendingPath: '/pending',
+    modulesBase: 'https://cdn.jsdelivr.net/gh/GapsyStudio/gapsy-crm@v0.1.0/modules/'
+  };
+  document.documentElement.classList.add('crm-loading');
+  // Аварійний таймаут: якщо CDN не відповів, не тримаємо білий екран (дані все одно під RLS)
+  setTimeout(function () { document.documentElement.classList.remove('crm-loading'); }, 8000);
+</script>
+<style>
+  * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  html.crm-loading body { visibility: hidden; }
+  [data-element="auth-error"] { display: none; }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/GapsyStudio/gapsy-crm@v0.1.0/crm-core.js"></script>

@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.7.0
+ * Gapsy CRM · crm-core.js v0.8.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -395,7 +395,29 @@
     });
   };
 
+  // Webflow ставить у нові форми англійські заглушки («Submit», «Please wait...», «Example text»).
+  // Замінюємо їх тут, щоб не правити кожну форму в Designer. Свої тексти з Designer не чіпаємо.
+  const SUBMIT = { pin: 'Закріпити', project: 'Створити проєкт', 'feedback-new': 'Створити правку', comment: 'Надіслати',
+    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', user: 'Зберегти', profile: 'Зберегти' };
+  const PLACEHOLDER = {
+    title: 'Назва', name: 'Назва', client: 'Клієнт', summary: 'Кілька речень: що за проєкт і для кого',
+    url: 'https://', live_url: 'https://', staging_url: 'https://…webflow.io', figma_url: 'https://figma.com/…',
+    webflow_url: 'https://webflow.com/design/…', github_url: 'https://github.com/…', clickup_url: 'https://app.clickup.com/…',
+    drive_url: 'https://drive.google.com/…', source_url: 'https://', description: 'Що саме, де і як має бути',
+    code: 'Встав код', foundry: 'Напр. Pangram Pangram', pageviews_limit: 'Напр. 10000', notes: 'Нотатки',
+    comment: 'Коментар (необовʼязково)', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
+    full_name: 'Імʼя та прізвище',
+  };
+  function localizeForms() {
+    $$('input[type="submit"]').forEach((b) => {
+      if (b.value === 'Submit') b.value = SUBMIT[b.closest('form')?.dataset.form] || 'Зберегти';
+      if (b.dataset.wait === 'Please wait...') b.dataset.wait = 'Зберігаю…';
+    });
+    $$('[placeholder="Example text"]').forEach((i) => { i.placeholder = PLACEHOLDER[i.name] || ''; });
+  }
+
   function bindUI() {
+    localizeForms();
     $$('[data-crm-role]').forEach((el) => { if (!CRM.can(el.dataset.crmRole)) el.remove(); });
     CRM.bindUser();
     // активний пункт меню
@@ -509,6 +531,48 @@
   media.addEventListener?.('change', () => CRM.theme());
 
   // ===================================================================
+  // ТАБИ З ПАНЕЛЯМИ
+  // [data-tabs="g"] > [data-tab="v"] + будь-де на сторінці [data-tab-panel="g:v"] (кілька панелей на один таб — ок).
+  // Хеш #v відкриває таб v; хеш #id відкриває таб, у панелі якого є елемент з цим id (напр. /project?id=…#handoff).
+  // ===================================================================
+  function showTabPanels(group, value, remember) {
+    const panels = $$(`[data-tab-panel^="${group}:"]`);
+    if (!panels.length) return;
+    panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== `${group}:${value}`; });
+    if (remember) history.replaceState(null, '', `${location.pathname}${location.search}#${value}`);
+  }
+  CRM.showTab = (group, value) => {
+    const g = $(`[data-tabs="${group}"]`);
+    const tab = g && $(`[data-tab="${value}"]`, g);
+    if (!tab) return;
+    $$('[data-tab]', g).forEach((t) => { t.classList.toggle('is-active', t === tab); t.setAttribute('aria-selected', t === tab); });
+    showTabPanels(group, value, false);
+  };
+  function initTabPanels() {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    $$('[data-tabs]').forEach((g) => {
+      const group = g.dataset.tabs;
+      if (!$(`[data-tab-panel^="${group}:"]`)) return;
+      let value = hash && $(`[data-tab="${CSS.escape(hash)}"]`, g) ? hash : null;
+      if (!value && hash) {
+        const target = document.getElementById(hash)?.closest(`[data-tab-panel^="${group}:"]`);
+        if (target) value = target.dataset.tabPanel.split(':')[1];
+      }
+      value ||= ($('[data-tab].is-active', g) || $('[data-tab]', g))?.dataset.tab;
+      if (value) CRM.showTab(group, value);
+    });
+  }
+
+  // ===================================================================
+  // МОБІЛЬНЕ МЕНЮ: data-action="toggle-nav" перемикає html.crm-nav-open (вигляд — у Head сайту)
+  // ===================================================================
+  function setNav(open) {
+    html.classList.toggle('crm-nav-open', open);
+    $$('[data-action="toggle-nav"]').forEach((b) => b.setAttribute('aria-expanded', String(open)));
+  }
+  matchMedia('(min-width: 768px)').addEventListener?.('change', (e) => { if (e.matches) setNav(false); });
+
+  // ===================================================================
   // ПОШУК Cmd+K
   // ===================================================================
   const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', font: 'Шрифт', access: 'Доступ', showcase: 'Showcase', doc: 'Документ' };
@@ -532,16 +596,42 @@
       });
     }
     searchInput.value = '';
-    CRM.render('search', []);
-    $('[data-list="search"]').dataset.state = '';
+    showQuick('');
     setTimeout(() => searchInput.focus(), 30);
+  }
+  // Порожній запит: нещодавно відкриті сторінки + розділи меню (лише доступні ролі — решту bindUI вже прибрав)
+  const RECENT_KEY = 'crm-recent';
+  const recentPages = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; } };
+  CRM.rememberPage = () => {
+    if (['/login', '/pending', '/', '/app'].includes(location.pathname)) return;
+    const url = location.pathname + location.search;
+    const title = document.title.replace(/\s*\|\s*Gapsy CRM$/, '').trim();
+    if (!title) return;
+    const list = [{ title, url }, ...recentPages().filter((r) => r.url !== url)].slice(0, 6);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch {}
+  };
+  const navPages = () => $$('[data-nav]').map((a) => ({ title: a.textContent.trim(), url: a.getAttribute('href') }));
+  function quickRows(q) {
+    const low = q.toLowerCase();
+    const match = (r) => !low || r.title.toLowerCase().includes(low);
+    const here = location.pathname + location.search;
+    return [
+      ...recentPages().filter((r) => r.url !== here && match(r)).slice(0, low ? 3 : 5).map((r) => ({ ...r, type: 'Нещодавнє' })),
+      ...navPages().filter(match).slice(0, low ? 3 : 12).map((r) => ({ ...r, type: 'Розділ' })),
+    ];
+  }
+  function showQuick(q) {
+    const items = CRM.render('search', quickRows(q), (el, r) => { el.href = r.url; });
+    items[0]?.classList.add('is-active');
   }
   async function runSearch() {
     const q = searchInput.value.trim();
-    if (q.length < 2) return CRM.render('search', []);
+    if (q.length < 2) return showQuick(q);
     const { data, error } = await sb.rpc('search_all', { q });
     if (error) return CRM.fail(error);
-    const items = CRM.render('search', data.map((r) => ({ ...r, type: KIND[r.kind] || r.kind })), (el, r) => {
+    if (searchInput.value.trim() !== q) return; // поки чекали відповідь, запит змінився
+    const rows = [...data.map((r) => ({ ...r, type: KIND[r.kind] || r.kind })), ...quickRows(q).filter((r) => r.type === 'Розділ')];
+    const items = CRM.render('search', rows, (el, r) => {
       el.href = r.url;
       if (r.kind === 'showcase') el.target = '_blank';
     });
@@ -622,6 +712,7 @@
         t.classList.toggle('is-active', t === tab);
         t.setAttribute('aria-selected', t === tab);
       });
+      showTabPanels(group.dataset.tabs, tab.dataset.tab, true);
       group.dispatchEvent(new CustomEvent('crm:tab', { bubbles: true, detail: { group: group.dataset.tabs, value: tab.dataset.tab } }));
       return;
     }
@@ -643,6 +734,7 @@
       return location.replace(cfg.loginPath);
     }
 
+    if (html.classList.contains('crm-nav-open') && e.target.closest('.app_nav a, .app_user a')) setNav(false);
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const a = el.dataset.action;
@@ -651,6 +743,7 @@
     if (a === 'close') { e.preventDefault(); return CRM.modal.close(el.closest('[data-modal]')); }
     if (a === 'toggle:notifications') { e.preventDefault(); return panel?.classList.toggle('is-open'); }
     if (a === 'notifications-read-all') { e.preventDefault(); return readNotifications(); }
+    if (a === 'toggle-nav') { e.preventDefault(); return setNav(!html.classList.contains('crm-nav-open')); }
     if (a === 'toggle-theme') {
       e.preventDefault();
       return CRM.theme(html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
@@ -664,6 +757,7 @@
       return openSearch();
     }
     if (e.key === 'Escape') {
+      setNav(false);
       $('[data-notif-panel]')?.classList.remove('is-open');
       return CRM.modal.close();
     }
@@ -698,9 +792,11 @@
       if (!guard()) return;
       CRM.theme();
       bindUI();
+      initTabPanels();
       html.classList.remove('crm-loading');
       if (CRM.can('auth') && $('[data-notif-panel]')) { loadNotifications(); watchNotifications(); }
       loadModules();
+      setTimeout(() => CRM.rememberPage(), 2000);
       document.dispatchEvent(new CustomEvent('crm:ready', { detail: CRM }));
     })
     .catch((err) => {

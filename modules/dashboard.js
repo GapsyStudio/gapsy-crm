@@ -1,7 +1,7 @@
 /* Gapsy CRM · modules/dashboard.js — Головна (/app)
  * Розмітка: [data-element="dashboard"], [data-today], списки my-feedback / recent-docs / pins, форма data-form="pin".
- * Баланс відпусток і нещодавні документи підключаться разом із модулями leave і docs. */
-CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge, crumbs }) => {
+ * Баланс відпусток підключиться разом із модулем leave. */
+CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge, crumbs, time }) => {
   crumbs('Головна');
   const STATUS = { new: ['New', 'is-blue'], in_progress: ['In Progress', 'is-yellow'], resolved: ['Resolved', 'is-green'] };
 
@@ -26,8 +26,13 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     });
   }
 
-  // simplified: документи з'являться з модулем docs
-  render('recent-docs', []);
+  // Нещодавно змінені документи бази знань
+  sb.from('docs').select('id, title, icon, updated_at').order('updated_at', { ascending: false }).limit(5)
+    .then(({ data, error }) => {
+      if (error) return console.error(error);
+      render('recent-docs', data.map((d) => ({ ...d, icon: d.icon || '📄', meta: time(d.updated_at) })),
+        (el, d) => { el.href = `/doc?id=${d.id}`; });
+    });
 
   // Закріплене
   async function loadPins() {

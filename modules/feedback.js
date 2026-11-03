@@ -1,8 +1,9 @@
 /* Gapsy CRM · modules/feedback.js — Правки (/feedback, /feedback?project=<id>)
- * Розмітка: [data-element="feedback"], таби data-tabs="status", список data-list="feedback",
- * форма data-form="feedback-new" з дропзоною data-dropzone="feedback" і прев'ю [data-upload-previews]. */
-CRM.module('feedback', (root, { sb, user, render, onSubmit, modal, toast, badge, time, dropzone, upload, param, name, crumbs }) => {
-  const STATUS = { new: ['New', 'is-blue'], in_progress: ['In Progress', 'is-yellow'], resolved: ['Resolved', 'is-green'] };
+ * Розмітка: [data-element="feedback"], таби data-tabs="status" (open | overdue | resolved | mine), список data-list="feedback",
+ * у шаблоні [data-field="status|priority|due|title|project|assignee|files|time"],
+ * форма data-form="feedback-new" (+ поля priority, due_date) з дропзоною data-dropzone="feedback" і прев'ю [data-upload-previews].
+ * v0.4: пріоритет і дедлайн; відкриті правки сортуються: пріоритет → дедлайн → новіші. */
+CRM.module('feedback', (root, { sb, user, render, onSubmit, modal, toast, time, dropzone, upload, param, name, crumbs, due, feedbackSort, feedbackBadges }) => {
   const projectId = param('project');
   let rows = [];
   let tab = 'open';
@@ -10,7 +11,7 @@ CRM.module('feedback', (root, { sb, user, render, onSubmit, modal, toast, badge,
 
   async function load() {
     let q = sb.from('feedback')
-      .select(`id, title, status, created_at, author_id, assignee_id,
+      .select(`id, title, status, priority, due_date, created_at, author_id, assignee_id,
         project:projects(id, name),
         assignee:profiles!feedback_assignee_id_fkey(full_name, email),
         feedback_files(count)`)
@@ -24,11 +25,16 @@ CRM.module('feedback', (root, { sb, user, render, onSubmit, modal, toast, badge,
     draw();
   }
 
+  const isOpen = (f) => f.status !== 'resolved';
+  const FILTERS = {
+    open: isOpen,
+    overdue: (f) => isOpen(f) && due(f.due_date)?.overdue,
+    mine: (f) => f.author_id === user.id || f.assignee_id === user.id,
+  };
+
   function draw() {
-    const list = rows.filter((f) =>
-      tab === 'open' ? f.status !== 'resolved'
-        : tab === 'mine' ? f.author_id === user.id || f.assignee_id === user.id
-          : f.status === tab);
+    const list = rows.filter(FILTERS[tab] || ((f) => f.status === tab));
+    if (tab !== 'resolved') list.sort(feedbackSort);
     render('feedback', list.map((f) => ({
       ...f,
       project: f.project?.name || '—',
@@ -37,8 +43,11 @@ CRM.module('feedback', (root, { sb, user, render, onSubmit, modal, toast, badge,
       time: time(f.created_at),
     })), (el, f) => {
       el.href = `/feedback-item?id=${f.id}`;
-      badge(el.querySelector('[data-field="status"]'), f.status, STATUS);
+      feedbackBadges(el, f);
     });
+    // лічильник на табі «Прострочені»
+    const n = rows.filter(FILTERS.overdue).length;
+    root.querySelectorAll('[data-count="overdue"]').forEach((c) => { c.textContent = n; c.hidden = !n; });
   }
 
   // Нова правка: якщо відкрито з фільтром проєкту — підставляємо його
@@ -56,8 +65,10 @@ CRM.module('feedback', (root, { sb, user, render, onSubmit, modal, toast, badge,
       title: d.title.trim(),
       project_id: d.project_id || null,
       assignee_id: d.assignee_id || null,
-      page_url: d.page_url.trim() || null,
-      description: d.description.trim() || null,
+      page_url: (d.page_url || '').trim() || null,
+      description: (d.description || '').trim() || null,
+      priority: d.priority || 'normal',
+      due_date: d.due_date || null,
     }).select('id').single();
     if (error) throw error;
     if (shots.files.length) {

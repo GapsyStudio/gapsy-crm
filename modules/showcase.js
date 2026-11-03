@@ -22,8 +22,12 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
   function fillCard(el, i) {
     badge(el.querySelector('[data-field="category"]'), i.category, CAT);
     el.dataset.id = i.id;
-    const img = el.querySelector('[data-field-src]');
-    if (img) img.alt = i.title;
+    // Webflow не дозволяє data-field-src на Image, тому обкладинку ставимо явно
+    const img = el.querySelector('[data-field-src]') || el.querySelector('img');
+    if (img) {
+      img.alt = i.title;
+      if (i.cover_url) { img.removeAttribute('srcset'); img.src = i.cover_url; }
+    }
   }
 
   function draw() {

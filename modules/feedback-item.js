@@ -109,6 +109,9 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       el.href = x.url;
       el.dataset.url = x.url;
       el.dataset.fileId = x.id;
+      // Webflow не дозволяє data-field-src на Image, тому мініатюру ставимо явно
+      const img = el.querySelector('img');
+      if (img && x.url) { img.removeAttribute('srcset'); img.loading = 'lazy'; img.src = x.url; }
       const c = el.querySelector('[data-field="marks"]');
       if (c) c.hidden = !c.textContent;
     });

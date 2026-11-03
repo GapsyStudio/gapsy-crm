@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'my-work', 'projects', 'project', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'my-work', 'projects', 'project', 'moodboard', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -208,10 +208,14 @@
     }
   }, true);
 
-  /** Опції для <select data-options="projects | staff | priority">. data-default="normal" — значення за замовчуванням. */
+  /** Опції для <select data-options="projects | staff | <статичний список>">. data-default="normal" — значення за замовчуванням.
+   *  Статичні списки реєструються в CRM.optionLists (модуль може додати свій: CRM.optionLists['font-license'] = [[v, текст], …]). */
   const optionsCache = {};
+  CRM.optionLists = {
+    priority: ['low', 'normal', 'high', 'urgent'].map((v) => [v, CRM.PRIORITY[v][0]]),
+  };
   CRM.options = async (kind) => {
-    if (kind === 'priority') return ['low', 'normal', 'high', 'urgent'].map((v) => [v, CRM.PRIORITY[v][0]]);
+    if (CRM.optionLists[kind]) return CRM.optionLists[kind];
     if (!optionsCache[kind]) {
       optionsCache[kind] = (kind === 'projects'
         ? sb.from('projects').select('id, name').neq('status', 'done').order('name')
@@ -221,18 +225,19 @@
     }
     return optionsCache[kind];
   };
+  async function fillOne(sel) {
+    const def = sel.dataset.default;
+    const have = new Set([...sel.options].map((o) => o.value));
+    (await CRM.options(sel.dataset.options)).forEach(([v, t]) => {
+      if (!have.has(v)) sel.add(new Option(t, v));
+    });
+    // значення за замовчуванням переживає form.reset()
+    if (def) [...sel.options].forEach((o) => { o.defaultSelected = o.value === def; o.selected = o.value === def; });
+    sel.dataset.filled = '1';
+  }
+  /** Заповнює select[data-options]. Повторний виклик чекає на той самий проміс, тож опції вже на місці. */
   async function fillSelects(root = document) {
-    for (const sel of $$('select[data-options]', root)) {
-      if (sel.dataset.filled) continue;
-      sel.dataset.filled = '1';
-      const def = sel.dataset.default;
-      const have = new Set([...sel.options].map((o) => o.value));
-      (await CRM.options(sel.dataset.options)).forEach(([v, t]) => {
-        if (!have.has(v)) sel.add(new Option(t, v));
-      });
-      // значення за замовчуванням переживає form.reset()
-      if (def) [...sel.options].forEach((o) => { o.defaultSelected = o.value === def; o.selected = o.value === def; });
-    }
+    await Promise.all($$('select[data-options]', root).map((sel) => sel._crmFill || (sel._crmFill = fillOne(sel))));
   }
   CRM.fillSelects = fillSelects;
 
@@ -444,7 +449,7 @@
   // ===================================================================
   // ПОШУК Cmd+K
   // ===================================================================
-  const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', showcase: 'Showcase', doc: 'Документ' };
+  const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', font: 'Шрифт', access: 'Доступ', showcase: 'Showcase', doc: 'Документ' };
   let searchInput = null;
   let searchTimer = null;
   function openSearch() {

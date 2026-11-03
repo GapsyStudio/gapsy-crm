@@ -87,6 +87,7 @@ CRM.module('moodboard', (root, { sb, render, onSubmit, modal, toast, action, upl
   // ⌘V картинки — лише коли не відкрита модалка й фокус не в полі вводу
   document.addEventListener('paste', (e) => {
     if (document.querySelector('[data-modal].is-open')) return;
+    if (root.closest('[hidden]') || root.hidden) return; // мудборд на іншому табі — ⌘V не перехоплюємо
     if (e.target.closest?.('input, textarea, [contenteditable]')) return;
     const files = [...(e.clipboardData?.files || [])];
     if (files.length) { e.preventDefault(); addImages(files); }

@@ -7,13 +7,14 @@
  *            [data-section-link] (поля icon, title), рядки розділів [data-section-item] (поля icon, title, meta = к-сть сторінок)
  *            у [data-section-items], [data-section-more] «Усі розділи»;
  *            обгортка [data-docs-sections-wrap] ховається під час пошуку
- *   дія:     doc-create (PM/admin) → новий документ одразу в режимі редагування */
+ *   дія:     doc-create (PM/admin) → новий документ одразу в режимі редагування; кнопка всередині картки групи
+ *            ([data-section-add data-action="doc-create"]) створює сторінку в цій групі */
 CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, crumbs }) => {
   crumbs('База знань');
   const title = root.querySelector('[data-docs-recent-title]');
   const input = root.querySelector('[data-docs-search]');
 
-  const { data: all, error } = await sb.from('docs').select('id, parent_id, title, icon, sort, updated_at').order('sort');
+  const { data: all, error } = await sb.from('docs').select('id, parent_id, title, icon, sort, updated_at, notion_id').order('sort');
   if (error) return CRM.fail(error);
   CRM.docsTree(all, null); // якщо дерево ще лишилось у розмітці
 
@@ -23,6 +24,7 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
   const countAll = (pid) => kidsOf(pid).reduce((n, k) => n + 1 + countAll(k.id), 0);
   const pages = (n) => (n % 10 === 1 && n % 100 !== 11 ? `${n} сторінка` : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? `${n} сторінки` : `${n} сторінок`);
   render('docs-sections', kidsOf(null).map((d) => ({ ...d, icon: d.icon || '📄' })), (card, d) => {
+    card.dataset.docId = d.id; // для «+ Сторінка» в картці групи
     const head = card.querySelector('[data-section-link]');
     if (head) head.href = `/doc?id=${d.id}`;
     const box = card.querySelector('[data-section-items]');
@@ -51,7 +53,8 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
   // нещодавно змінені
   const recent = () => {
     if (title) title.textContent = 'Нещодавно змінені';
-    const rows = [...all].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 8);
+    const rows = all.filter((d) => !String(d.notion_id || '').startsWith('group:')) // групи — не документи
+      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 8);
     render('docs-recent', rows.map((d) => ({ ...d, icon: d.icon || '📄', meta: time(d.updated_at) })),
       (el, d) => { el.href = `/doc?id=${d.id}`; });
   };
@@ -79,9 +82,11 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
   });
   onSubmit('docs-search', async () => {}); // Enter не відправляє форму у Webflow
 
-  action('doc-create', async () => {
+  // «+ Сторінка» в картці групи → нова сторінка в цій групі; кнопка без картки → верхній рівень
+  action('doc-create', async (el) => {
+    const parent = el?.closest('[data-doc-id]')?.dataset.docId || null;
     const { data, error: err } = await sb.from('docs')
-      .insert({ title: 'Нова сторінка', sort: all.filter((d) => !d.parent_id).length })
+      .insert({ title: 'Нова сторінка', parent_id: parent, sort: all.filter((d) => d.parent_id === parent).length * 10 + 10 })
       .select('id').single();
     if (err) return CRM.fail(err);
     toast('Документ створено');

@@ -27,9 +27,10 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
   }
 
   // Нещодавно змінені документи бази знань
-  sb.from('docs').select('id, title, icon, updated_at').order('updated_at', { ascending: false }).limit(5)
+  sb.from('docs').select('id, title, icon, updated_at, notion_id').order('updated_at', { ascending: false }).limit(9)
     .then(({ data, error }) => {
       if (error) return console.error(error);
+      data = data.filter((d) => !String(d.notion_id || '').startsWith('group:')).slice(0, 5); // групи — не документи
       render('recent-docs', data.map((d) => ({ ...d, icon: d.icon || '📄', meta: time(d.updated_at) })),
         (el, d) => { el.href = `/doc?id=${d.id}`; });
     });

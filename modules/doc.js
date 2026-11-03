@@ -206,6 +206,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     if (icon) icon.textContent = doc.icon || '📄';
     titleEl.textContent = doc.title;
     document.title = `${doc.title} | Gapsy CRM`;
+    CRM.rememberPage?.();
     const meta = $('[data-doc="meta"]');
     if (meta) meta.textContent = doc.editor ? `Оновив ${name(doc.editor)} · ${date(doc.updated_at)}` : `Імпортовано з Notion · ${date(doc.updated_at)}`;
     const path = [];

@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.6.0
+ * Gapsy CRM · crm-core.js v0.7.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -103,7 +103,7 @@
    * Дерево документів у [data-list="docs-tree"]: шаблон посилання [data-template] і контейнер дітей [data-template="children"].
    * rows: [{ id, parent_id, title, icon, sort }]. Розгорнута лише гілка до активного документа.
    */
-  CRM.docsTree = (rows, activeId) => {
+  CRM.docsTree = (rows, activeId, rootId = null) => {
     const list = $('[data-list="docs-tree"]');
     if (!list) return;
     const linkTpl = list.querySelector(':scope > [data-template]:not([data-template="children"])');
@@ -135,7 +135,7 @@
         }
       });
     };
-    draw('root', list, anchor);
+    draw(rootId || 'root', list, anchor);
     list.dataset.state = rows.length ? 'ready' : 'empty';
   };
 
@@ -409,7 +409,29 @@
     const h1 = $('[data-page-content] h1');
     if (h1) CRM.crumbs(h1.textContent.trim());
   }
-  CRM.crumbs = (text) => { const c = $('[data-crm-crumbs]'); if (c) c.textContent = text; };
+  /** Хлібні крихти: рядок або масив [[текст, href], …, [поточна]] — тоді попередні рівні клікабельні. */
+  CRM.crumbs = (items) => {
+    const c = $('[data-crm-crumbs]');
+    if (!c) return;
+    if (!Array.isArray(items)) { c.textContent = items; return; }
+    c.replaceChildren();
+    items.forEach(([text, href], i) => {
+      if (i) {
+        const sep = document.createElement('span');
+        sep.className = 'crumbs_sep';
+        sep.setAttribute('aria-hidden', 'true');
+        sep.textContent = '/';
+        c.appendChild(sep);
+      }
+      const last = i === items.length - 1;
+      const node = document.createElement(last || !href ? 'span' : 'a');
+      node.className = last ? 'crumbs_current' : 'crumbs_link';
+      node.textContent = text;
+      if (node.tagName === 'A') node.href = href;
+      if (last) node.setAttribute('aria-current', 'page');
+      c.appendChild(node);
+    });
+  };
 
   // вхід email + пароль (capture: раніше за Webflow)
   const errorEl = () => $('[data-element="auth-error"]');

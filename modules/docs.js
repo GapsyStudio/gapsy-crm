@@ -1,10 +1,11 @@
 /* Gapsy CRM · modules/docs.js — База знань (/docs)
  * Розмітка: [data-element="docs"]
- *   дерево:  data-list="docs-tree" (шаблон посилання + [data-template="children"]) — малює CRM.docsTree
+ *   (з v0.7 дерева на /docs немає — воно живе лише на /doc і показує поточну групу)
  *   список:  data-list="docs-recent" (поля icon, title, meta), заголовок секції [data-docs-recent-title]
  *   пошук:   input [data-docs-search] у формі data-form="docs-search"
- *   розділи: data-list="docs-sections" — картка на кожен розділ верхнього рівня: [data-section-link] (поля icon, title),
- *            рядки сторінок [data-section-item] (поля icon, title) у [data-section-items], [data-section-more] «Усі сторінки»;
+ *   групи:   data-list="docs-sections" — картка на кожну групу верхнього рівня (Старт, Як ми працюємо…):
+ *            [data-section-link] (поля icon, title), рядки розділів [data-section-item] (поля icon, title, meta = к-сть сторінок)
+ *            у [data-section-items], [data-section-more] «Усі розділи»;
  *            обгортка [data-docs-sections-wrap] ховається під час пошуку
  *   дія:     doc-create (PM/admin) → новий документ одразу в режимі редагування */
 CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, crumbs }) => {
@@ -14,11 +15,13 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
 
   const { data: all, error } = await sb.from('docs').select('id, parent_id, title, icon, sort, updated_at').order('sort');
   if (error) return CRM.fail(error);
-  CRM.docsTree(all, null);
+  CRM.docsTree(all, null); // якщо дерево ще лишилось у розмітці
 
-  // розділи як на головній Notion: картка розділу і його сторінки
+  // групи → розділи (як головна в Notion)
   const SHOW = 8;
   const kidsOf = (pid) => all.filter((d) => d.parent_id === pid).sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
+  const countAll = (pid) => kidsOf(pid).reduce((n, k) => n + 1 + countAll(k.id), 0);
+  const pages = (n) => (n % 10 === 1 && n % 100 !== 11 ? `${n} сторінка` : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? `${n} сторінки` : `${n} сторінок`);
   render('docs-sections', kidsOf(null).map((d) => ({ ...d, icon: d.icon || '📄' })), (card, d) => {
     const head = card.querySelector('[data-section-link]');
     if (head) head.href = `/doc?id=${d.id}`;
@@ -29,7 +32,8 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
       tpl.remove();
       kids.slice(0, SHOW).forEach((k) => {
         const row = tpl.cloneNode(true);
-        CRM.fill(row, { title: k.title, icon: k.icon || '📄' });
+        const n = countAll(k.id);
+        CRM.fill(row, { title: k.title, icon: k.icon || '📄', meta: n ? pages(n) : '' });
         row.href = `/doc?id=${k.id}`;
         box.appendChild(row);
       });
@@ -39,7 +43,7 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
     if (more) {
       more.hidden = kids.length <= SHOW;
       more.href = `/doc?id=${d.id}`;
-      more.textContent = `Усі сторінки (${kids.length}) →`;
+      more.textContent = `Усі розділи (${kids.length}) →`;
     }
   });
   const sectionsWrap = root.querySelector('[data-docs-sections-wrap]');

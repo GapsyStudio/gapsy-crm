@@ -1,6 +1,7 @@
 /* Gapsy CRM · modules/doc.js — Документ бази знань (/doc?id=<id>)
  * Розмітка: [data-element="doc"]
- *   дерево:   data-list="docs-tree" (CRM.docsTree)
+ *   дерево:   data-list="docs-tree" (CRM.docsTree) — лише поточна група; шапка групи [data-doc-group] (поля icon, title)
+ *   зміст:    [data-doc-toc-wrap] + data-list="doc-toc" (поле title) — «На цій сторінці», якщо заголовків ≥ 3
  *   шапка:    [data-doc="icon|title|meta"]
  *   контент:  [data-doc-editor] — сюди JS малює блоки (читання) або вмикає Editor.js (редагування)
  *   діти:     [data-doc-children-section] + data-list="doc-children"
@@ -33,7 +34,21 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     sb.from('docs').select('*, editor:profiles!docs_updated_by_fkey(full_name, email)').eq('id', id).maybeSingle(),
   ]);
   if (e1 || e2) return CRM.fail(e1 || e2);
-  CRM.docsTree(all, id);
+  const byId = Object.fromEntries(all.map((d) => [d.id, d]));
+  // група = предок верхнього рівня; дерево показує лише її
+  const groupOf = (docId) => { let d = byId[docId]; while (d?.parent_id && byId[d.parent_id]) d = byId[d.parent_id]; return d; };
+  const group = groupOf(id);
+  const drawTree = () => {
+    CRM.docsTree(all, id, group?.id || null);
+    const head = $('[data-doc-group]');
+    if (head) head.hidden = !group;
+    if (head && group) {
+      CRM.fill(head, { icon: group.icon || '📄', title: group.title });
+      head.href = `/doc?id=${group.id}`;
+      head.classList.toggle('is-active', group.id === id);
+    }
+  };
+  drawTree();
   if (!doc) return notFound();
 
   // =================================================================
@@ -186,7 +201,6 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
   // =================================================================
   // ШАПКА, ХЛІБНІ КРИХТИ, ДІТИ
   // =================================================================
-  const byId = Object.fromEntries(all.map((d) => [d.id, d]));
   function drawHead() {
     const icon = $('[data-doc="icon"]');
     if (icon) icon.textContent = doc.icon || '📄';
@@ -195,8 +209,8 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     const meta = $('[data-doc="meta"]');
     if (meta) meta.textContent = doc.editor ? `Оновив ${name(doc.editor)} · ${date(doc.updated_at)}` : `Імпортовано з Notion · ${date(doc.updated_at)}`;
     const path = [];
-    for (let d = byId[doc.parent_id]; d; d = byId[d.parent_id]) path.unshift(d.title);
-    crumbs(['База знань', ...path, doc.title].join(' / '));
+    for (let d = byId[doc.parent_id]; d; d = byId[d.parent_id]) path.unshift([d.title, `/doc?id=${d.id}`]);
+    crumbs([['База знань', '/docs'], ...path, [doc.title]]);
   }
   function drawChildren() {
     const linked = new Set([...JSON.stringify(doc.content || {}).matchAll(/\/doc\?id=([0-9a-f-]{36})/g)].map((m) => m[1]));
@@ -205,10 +219,50 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     render('doc-children', kids.map((d) => ({ ...d, icon: d.icon || '📄' })), (row, d) => { row.href = `/doc?id=${d.id}`; });
     show($('[data-doc-children-section]'), kids.length > 0);
   }
+  // «На цій сторінці»: заголовки h2/h3 отримують id, список — у data-list="doc-toc"
+  const tocWrap = $('[data-doc-toc-wrap]') || document.querySelector('[data-doc-toc-wrap]');
+  let tocObserver;
+  function drawToc() {
+    tocObserver?.disconnect();
+    const heads = [...holder.querySelectorAll('h2, h3')];
+    const used = new Set();
+    heads.forEach((h, i) => {
+      let slug = h.textContent.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').slice(0, 60) || `h-${i}`;
+      while (used.has(slug)) slug += `-${i}`;
+      used.add(slug);
+      h.id = slug;
+    });
+    const on = heads.length >= 3;
+    if (tocWrap) tocWrap.hidden = !on;
+    if (!on) return;
+    render('doc-toc', heads.map((h) => ({ id: h.id, title: h.textContent.trim(), level: h.tagName })), (a, d) => {
+      a.href = `#${d.id}`;
+      a.classList.toggle('is-sub', d.level === 'H3');
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        document.getElementById(d.id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+        history.replaceState(null, '', `#${d.id}`);
+      });
+    });
+    // підсвічуємо розділ, який зараз читають
+    const links = new Map([...document.querySelectorAll('[data-list="doc-toc"] > [data-rendered]')]
+      .map((a) => [a.getAttribute('href').slice(1), a]));
+    tocObserver = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        links.forEach((a) => a.classList.remove('is-active'));
+        links.get(en.target.id)?.classList.add('is-active');
+      });
+    }, { rootMargin: '0px 0px -70% 0px' });
+    heads.forEach((h) => tocObserver.observe(h));
+  }
+
   drawHead();
   drawChildren();
   await renderBlocks(doc.content?.blocks || []);
-  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  drawToc();
+  if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
 
   // =================================================================
   // ЗАКРІПИТИ (на Головній)
@@ -279,6 +333,8 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     const urls = await signedUrls(storagePaths(blocks));
     blocks.forEach((b) => { if (b.type === 'image' && b.data.file?.path) b.data.file.url = urls[b.data.file.path] || ''; });
     holder.replaceChildren();
+    tocObserver?.disconnect();
+    if (tocWrap) tocWrap.hidden = true;
     setMode(true);
     editor = new window.EditorJS({
       holder,
@@ -322,6 +378,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     titleEl.textContent = doc.title;
     if (iconEl) iconEl.textContent = doc.icon || '📄';
     await renderBlocks(doc.content?.blocks || []);
+    drawToc();
   }
 
   action('doc-edit', startEdit);
@@ -341,7 +398,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     Object.assign(doc, data);
     byId[id].title = data.title;
     byId[id].icon = data.icon;
-    CRM.docsTree(all, id);
+    drawTree();
     drawHead();
     drawChildren();
     toast('Збережено');

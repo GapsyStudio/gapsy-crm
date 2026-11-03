@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'projects', 'project', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'my-work', 'projects', 'project', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -125,6 +125,47 @@
     iso ? new Date(iso).toLocaleDateString('uk-UA', opts) : '—';
   CRM.name = (p) => (p && (p.full_name || p.email)) || '—';
 
+  // ---------- правки: статус, пріоритет, дедлайн (v0.4) ----------
+  CRM.FEEDBACK_STATUS = { new: ['New', 'is-blue'], in_progress: ['In Progress', 'is-yellow'], resolved: ['Resolved', 'is-green'] };
+  CRM.PRIORITY = { urgent: ['Терміново', 'is-red'], high: ['Високий', 'is-yellow'], normal: ['Звичайний', ''], low: ['Низький', ''] };
+  const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+  /** Дедлайн (рядок 'YYYY-MM-DD') → { text, combo, overdue } або null. Для закритої правки без кольору. */
+  CRM.due = (d, closed = false) => {
+    if (!d) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const day = new Date(`${d}T00:00:00`);
+    const diff = Math.round((day - today) / 864e5);
+    const text = diff === 0 ? 'Сьогодні' : diff === 1 ? 'Завтра' : diff === -1 ? 'Вчора'
+      : day.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+    if (closed) return { text, combo: '', overdue: false };
+    const overdue = diff < 0;
+    return { text: overdue ? `Прострочено · ${text}` : text, combo: overdue ? 'is-red' : diff <= 1 ? 'is-yellow' : '', overdue };
+  };
+
+  /** Порядок правок: пріоритет → найближчий дедлайн (без дедлайну в кінці) → новіші. */
+  CRM.feedbackSort = (a, b) =>
+    (PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2)
+    || (a.due_date || '9999').localeCompare(b.due_date || '9999')
+    || String(b.created_at || '').localeCompare(String(a.created_at || ''));
+
+  /** Бейджі правки в рядку: [data-field="status|priority|due"]. Звичайний пріоритет і порожній дедлайн ховаються. */
+  CRM.feedbackBadges = (el, f) => {
+    CRM.badge(el.querySelector('[data-field="status"]'), f.status, CRM.FEEDBACK_STATUS);
+    const pr = el.querySelector('[data-field="priority"]');
+    if (pr) {
+      CRM.badge(pr, f.priority || 'normal', CRM.PRIORITY);
+      pr.hidden = !f.priority || f.priority === 'normal';
+    }
+    const du = el.querySelector('[data-field="due"]');
+    if (du) {
+      const d = CRM.due(f.due_date, f.status === 'resolved');
+      du.hidden = !d;
+      if (d) CRM.badge(du, 'x', { x: [d.text, d.combo] });
+    }
+  };
+
   /** Toast унизу праворуч. */
   CRM.toast = (text, ms = 3000) => {
     const region = $('[data-toast-region]');
@@ -167,9 +208,10 @@
     }
   }, true);
 
-  /** Опції для <select data-options="projects | staff">. */
+  /** Опції для <select data-options="projects | staff | priority">. data-default="normal" — значення за замовчуванням. */
   const optionsCache = {};
   CRM.options = async (kind) => {
+    if (kind === 'priority') return ['low', 'normal', 'high', 'urgent'].map((v) => [v, CRM.PRIORITY[v][0]]);
     if (!optionsCache[kind]) {
       optionsCache[kind] = (kind === 'projects'
         ? sb.from('projects').select('id, name').neq('status', 'done').order('name')
@@ -183,9 +225,16 @@
     for (const sel of $$('select[data-options]', root)) {
       if (sel.dataset.filled) continue;
       sel.dataset.filled = '1';
-      (await CRM.options(sel.dataset.options)).forEach(([v, t]) => sel.add(new Option(t, v)));
+      const def = sel.dataset.default;
+      const have = new Set([...sel.options].map((o) => o.value));
+      (await CRM.options(sel.dataset.options)).forEach(([v, t]) => {
+        if (!have.has(v)) sel.add(new Option(t, v));
+      });
+      // значення за замовчуванням переживає form.reset()
+      if (def) [...sel.options].forEach((o) => { o.defaultSelected = o.value === def; o.selected = o.value === def; });
     }
   }
+  CRM.fillSelects = fillSelects;
 
   // ---------- файли ----------
   const IMG = /^image\/(png|jpe?g|webp|gif)$/;

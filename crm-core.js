@@ -284,7 +284,12 @@
     $$('[data-crm-user]').forEach((el) => {
       const key = el.dataset.crmUser;
       const val = key === 'email' ? CRM.user?.email : CRM.profile?.[key];
-      if (val == null || val === '') return;
+      // Запам'ятовуємо текст із Designer («колего»), щоб повернути його, якщо значення стерли
+      if (el.tagName !== 'IMG' && el.dataset.crmFallback == null) el.dataset.crmFallback = el.textContent;
+      if (val == null || val === '') {
+        if (el.tagName !== 'IMG') el.textContent = el.dataset.crmFallback;
+        return;
+      }
       if (el.tagName === 'IMG') el.src = val;
       else el.textContent = val;
     });

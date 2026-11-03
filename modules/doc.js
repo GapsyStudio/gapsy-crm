@@ -13,6 +13,12 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
   const $ = (s) => root.querySelector(s);
   const holder = $('[data-doc-editor]');
   const titleEl = $('[data-doc="title"]');
+  const iconEl = $('[data-doc="icon"]');
+  // перший символ-емодзі (з урахуванням складених, напр. 🧑‍💻)
+  const firstEmoji = (s) => {
+    const seg = [...new Intl.Segmenter('uk', { granularity: 'grapheme' }).segment(String(s || '').trim())][0];
+    return seg && /\p{Extended_Pictographic}/u.test(seg.segment) ? seg.segment : null;
+  };
   const btn = (a) => root.querySelector(`[data-action="${a}"]`);
   const show = (el, on) => { if (el) el.hidden = !on; };
 
@@ -86,6 +92,29 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     return l;
   }
 
+  // Абзац, де є лише одне посилання (і, можливо, емодзі перед ним) — як сторінка-посилання в Notion
+  const LEAD = /^[\s\p{Extended_Pictographic}\u200d\ufe0f]*$/u;
+  function pageLink(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const nodes = [...tpl.content.childNodes].filter((n) => !(n.nodeType === 3 && !n.textContent.trim()));
+    const a = nodes[nodes.length - 1];
+    if (!a || a.tagName !== 'A' || !a.getAttribute('href')) return null;
+    const lead = nodes.slice(0, -1);
+    if (lead.some((n) => n.nodeType !== 3) || !LEAD.test(lead.map((n) => n.textContent).join(''))) return null;
+    const href = a.getAttribute('href');
+    const docId = (href.match(/^\/doc\?id=([0-9a-f-]{36})/) || [])[1];
+    const icon = lead.map((n) => n.textContent).join('').trim() || (docId ? byId[docId]?.icon || '📄' : '🔗');
+    const row = el('a', null, 'doc_link');
+    row.href = href;
+    if (!href.startsWith('/')) { row.target = '_blank'; row.rel = 'noopener'; }
+    row.append(el('span', null, 'doc_link-icon'), el('span', null, 'doc_link-title'));
+    row.firstChild.textContent = icon;
+    row.lastChild.textContent = (docId && byId[docId]?.title) || a.textContent.trim() || href;
+    if (!href.startsWith('/')) row.lastChild.textContent += ' ↗';
+    return row;
+  }
+
   async function renderBlocks(blocks) {
     const urls = await signedUrls(storagePaths(blocks));
     const frag = document.createDocumentFragment();
@@ -93,7 +122,14 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
       const d = b.data || {};
       switch (b.type) {
         case 'header': frag.appendChild(el(`h${Math.min(Math.max(d.level || 2, 2), 4)}`, clean(d.text, urls))); break;
-        case 'paragraph': frag.appendChild(el('p', clean(d.text, urls))); break;
+        case 'paragraph': {
+          const row = pageLink(clean(d.text, urls));
+          if (!row) { frag.appendChild(el('p', clean(d.text, urls))); break; }
+          let box = frag.lastChild;
+          if (!box || !box.classList?.contains('doc_links')) box = frag.appendChild(el('div', null, 'doc_links'));
+          box.appendChild(row);
+          break;
+        }
         case 'list': frag.appendChild(listEl(d.style, d.items, d.meta?.start, urls)); break;
         case 'checklist': {
           const ul = el('ul', null, 'doc_checklist');
@@ -163,7 +199,9 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     crumbs(['База знань', ...path, doc.title].join(' / '));
   }
   function drawChildren() {
-    const kids = all.filter((d) => d.parent_id === id).sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
+    const linked = new Set([...JSON.stringify(doc.content || {}).matchAll(/\/doc\?id=([0-9a-f-]{36})/g)].map((m) => m[1]));
+    const kids = all.filter((d) => d.parent_id === id && !linked.has(d.id))
+      .sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
     render('doc-children', kids.map((d) => ({ ...d, icon: d.icon || '📄' })), (row, d) => { row.href = `/doc?id=${d.id}`; });
     show($('[data-doc-children-section]'), kids.length > 0);
   }
@@ -220,10 +258,17 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     show(btn('doc-edit'), !editing);
     ['doc-save', 'doc-cancel', 'doc-delete', 'doc-create-child'].forEach((a) => show(btn(a), editing));
     titleEl.contentEditable = editing ? 'plaintext-only' : 'false';
+    if (iconEl) {
+      iconEl.contentEditable = editing ? 'plaintext-only' : 'false';
+      iconEl.title = editing ? 'Клікни й встав емодзі (Mac: Ctrl+Cmd+Пробіл)' : '';
+      iconEl.classList.toggle('is-editing', editing);
+    }
     titleEl.classList.toggle('is-editing', editing);
     holder.classList.toggle('is-editing', editing);
   };
   setMode(false);
+  iconEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); iconEl.blur(); } });
+  iconEl?.addEventListener('blur', () => { if (iconEl.isContentEditable) iconEl.textContent = firstEmoji(iconEl.textContent) || '📄'; });
   const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
 
   async function startEdit() {
@@ -275,6 +320,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     editor = null;
     setMode(false);
     titleEl.textContent = doc.title;
+    if (iconEl) iconEl.textContent = doc.icon || '📄';
     await renderBlocks(doc.content?.blocks || []);
   }
 
@@ -287,13 +333,17 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     // signed URL тимчасові: у базі лишаємо лише path
     out.blocks.forEach((b) => { if (b.type === 'image' && b.data.file?.path) delete b.data.file.url; });
     const title = titleEl.textContent.trim().slice(0, 200) || 'Без назви';
-    const { data, error } = await sb.from('docs').update({ title, content: out }).eq('id', id)
+    let icon = firstEmoji(iconEl?.textContent);
+    if (icon === '📄' && !doc.icon) icon = null; // 📄 — це просто іконка за замовчуванням
+    const { data, error } = await sb.from('docs').update({ title, icon, content: out }).eq('id', id)
       .select('*, editor:profiles!docs_updated_by_fkey(full_name, email)').single();
     if (error) return CRM.fail(error);
     Object.assign(doc, data);
     byId[id].title = data.title;
+    byId[id].icon = data.icon;
     CRM.docsTree(all, id);
     drawHead();
+    drawChildren();
     toast('Збережено');
     stopEdit();
   });

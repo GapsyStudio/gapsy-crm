@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.3.0
+ * Gapsy CRM · crm-core.js v0.6.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'my-work', 'projects', 'project', 'moodboard', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -97,6 +97,46 @@
     });
     list.dataset.state = rows.length ? 'ready' : 'empty';
     return out;
+  };
+
+  /**
+   * Дерево документів у [data-list="docs-tree"]: шаблон посилання [data-template] і контейнер дітей [data-template="children"].
+   * rows: [{ id, parent_id, title, icon, sort }]. Розгорнута лише гілка до активного документа.
+   */
+  CRM.docsTree = (rows, activeId) => {
+    const list = $('[data-list="docs-tree"]');
+    if (!list) return;
+    const linkTpl = list.querySelector(':scope > [data-template]:not([data-template="children"])');
+    const kidsTpl = list.querySelector(':scope > [data-template="children"]');
+    list.querySelectorAll(':scope > [data-rendered]').forEach((n) => n.remove());
+    if (!linkTpl) return;
+    const byParent = {};
+    rows.forEach((r) => (byParent[r.parent_id || 'root'] ||= []).push(r));
+    Object.values(byParent).forEach((a) => a.sort((x, y) => x.sort - y.sort || x.title.localeCompare(y.title)));
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    const open = new Set();
+    for (let d = byId[activeId]; d; d = byId[d.parent_id]) open.add(d.id);
+    const anchor = list.querySelector(':scope > [data-skeleton], :scope > [data-empty]');
+    const draw = (parentKey, into, before) => {
+      (byParent[parentKey] || []).forEach((d) => {
+        const a = linkTpl.cloneNode(true);
+        a.removeAttribute('data-template');
+        a.setAttribute('data-rendered', '');
+        CRM.fill(a, { title: d.title, icon: d.icon || '📄' });
+        a.href = `/doc?id=${d.id}`;
+        if (d.id === activeId) { a.classList.add('is-active'); a.setAttribute('aria-current', 'page'); }
+        into.insertBefore(a, before);
+        if (open.has(d.id) && byParent[d.id] && kidsTpl) {
+          const box = kidsTpl.cloneNode(false);
+          box.removeAttribute('data-template');
+          box.setAttribute('data-rendered', '');
+          into.insertBefore(box, before);
+          draw(d.id, box, null);
+        }
+      });
+    };
+    draw('root', list, anchor);
+    list.dataset.state = rows.length ? 'ready' : 'empty';
   };
 
   /** Бейдж статусу: map = { value: [текст, 'is-blue'] }. */

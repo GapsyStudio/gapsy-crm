@@ -1,0 +1,31 @@
+<div class="modal_wrapper" data-modal="project-edit" role="dialog" aria-modal="true" aria-label="Редагувати проєкт">
+  <form class="modal" data-form="project-edit">
+    <div class="modal_header"><div class="card_title">Редагувати проєкт</div><a href="#" class="icon_button" data-action="close" aria-label="Закрити">×</a></div>
+    <div class="modal_body">
+      <div class="form_row">
+        <div class="form_field"><label class="field-label" for="pe-name">Назва</label><input class="form-input" id="pe-name" type="text" name="name" required></div>
+        <div class="form_field"><label class="field-label" for="pe-client">Клієнт</label><input class="form-input" id="pe-client" type="text" name="client"></div>
+      </div>
+      <div class="form_row">
+        <div class="form_field"><label class="field-label" for="pe-status">Статус</label><select class="form-input" id="pe-status" name="status"><option value="active">Активний</option><option value="paused">Пауза</option><option value="done">Завершений</option></select></div>
+        <div class="form_field"><label class="field-label" for="pe-prefix">Префікс класів</label><input class="form-input" id="pe-prefix" type="text" name="prefix" placeholder="cv-"></div>
+      </div>
+      <div class="form_field"><label class="field-label" for="pe-stack">Стек (через кому)</label><input class="form-input" id="pe-stack" type="text" name="stack" placeholder="GSAP, Lenis, Swiper 8"></div>
+      <div class="form_field"><label class="field-label" for="pe-summary">Про проєкт</label><textarea class="form-input" id="pe-summary" name="summary" rows="3"></textarea></div>
+      <div class="form_row">
+        <div class="form_field"><label class="field-label" for="pe-live">Live</label><input class="form-input" id="pe-live" type="url" name="live_url"></div>
+        <div class="form_field"><label class="field-label" for="pe-staging">Staging</label><input class="form-input" id="pe-staging" type="url" name="staging_url"></div>
+      </div>
+      <div class="form_row">
+        <div class="form_field"><label class="field-label" for="pe-figma">Figma</label><input class="form-input" id="pe-figma" type="url" name="figma_url"></div>
+        <div class="form_field"><label class="field-label" for="pe-webflow">Webflow Designer</label><input class="form-input" id="pe-webflow" type="url" name="webflow_url"></div>
+      </div>
+      <div class="form_row">
+        <div class="form_field"><label class="field-label" for="pe-github">GitHub</label><input class="form-input" id="pe-github" type="url" name="github_url"></div>
+        <div class="form_field"><label class="field-label" for="pe-clickup">ClickUp</label><input class="form-input" id="pe-clickup" type="url" name="clickup_url"></div>
+      </div>
+      <div class="form_field"><label class="field-label" for="pe-drive">Drive / ассети</label><input class="form-input" id="pe-drive" type="url" name="drive_url"></div>
+    </div>
+    <div class="modal_footer"><a href="#" class="button is-text is-small" data-action="project-delete" data-crm-role="pm,admin">Видалити проєкт</a><a href="#" class="button is-text is-small" data-action="close">Скасувати</a><input type="submit" class="button is-small" value="Зберегти"></div>
+  </form>
+</div>

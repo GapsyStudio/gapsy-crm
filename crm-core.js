@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.8.0
+ * Gapsy CRM · crm-core.js v0.11.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -362,6 +362,29 @@
     return Object.fromEntries(data.filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
   };
 
+  /** v0.11: прибрати файли з приватного bucket media. Без помилки, якщо прав немає (файл чужий) — запис у БД важливіший. */
+  CRM.removeFiles = async (paths) => {
+    const list = [...new Set((paths || []).filter(Boolean))];
+    if (!list.length) return;
+    try { await sb.storage.from('media').remove(list); } catch (e) { console.warn('[CRM] removeFiles', e); }
+  };
+
+  /** v0.11: видалити проєкт (PM/admin). Просить ввести назву — щоб не видалити випадково.
+   *  Каскадом зникають команда, нотатки, мудборд, передача, звʼязки зі сніпетами й шрифтами;
+   *  правки й Showcase лишаються «без проєкту». Повертає true, якщо видалено. */
+  CRM.deleteProject = async (p) => {
+    if (!p?.id || !CRM.can('pm,admin')) return false;
+    const typed = prompt(`Видалити проєкт «${p.name}»?\n\nЗникнуть команда, нотатки, мудборд і передача. Правки й Showcase залишаться без проєкту.\n\nЩоб підтвердити, введи назву проєкту:`);
+    if (typed == null) return false;
+    if (typed.trim().toLowerCase() !== String(p.name).trim().toLowerCase()) { CRM.toast('Назва не збігається — проєкт не видалено'); return false; }
+    const { data: mood } = await sb.from('moodboard_items').select('path').eq('project_id', p.id).not('path', 'is', null);
+    const { error } = await sb.from('projects').delete().eq('id', p.id);
+    if (error) { CRM.fail(error); return false; }
+    CRM.removeFiles((mood || []).map((m) => m.path));
+    CRM.toast('Проєкт видалено');
+    return true;
+  };
+
   // ===================================================================
   // НАВІГАЦІЯ ТА ВХІД
   // ===================================================================
@@ -706,6 +729,13 @@
     await q;
     loadNotifications();
   }
+  // v0.11: очистити всі свої сповіщення (кнопка data-action="notifications-clear" у панелі)
+  async function clearNotifications() {
+    if (!confirm('Очистити всі сповіщення?')) return;
+    const { error } = await sb.from('notifications').delete().eq('user_id', CRM.user.id);
+    if (error) return CRM.fail(error);
+    loadNotifications();
+  }
 
   // ===================================================================
   // ДЕЛЕГОВАНІ ПОДІЇ
@@ -763,6 +793,7 @@
     if (a === 'close') { e.preventDefault(); return CRM.modal.close(el.closest('[data-modal]')); }
     if (a === 'toggle:notifications') { e.preventDefault(); return panel?.classList.toggle('is-open'); }
     if (a === 'notifications-read-all') { e.preventDefault(); return readNotifications(); }
+    if (a === 'notifications-clear') { e.preventDefault(); return clearNotifications(); }
     if (a === 'toggle-nav') { e.preventDefault(); return setNav(!html.classList.contains('crm-nav-open')); }
     if (a === 'toggle-theme') {
       e.preventDefault();

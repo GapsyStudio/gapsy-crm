@@ -44,12 +44,18 @@ FIX.inspo_links = [
   { id: 'ri1', url: 'https://www.awwwards.com/sites/a', title: 'Awwwards hero', note: 'Скрол-анімація', tags: ['hero', 'scroll'], created_by: 'u1', created_at: new Date().toISOString(), author: { full_name: 'Нелія' } },
   { id: 'ri2', url: 'https://dribbble.com/shots/1', title: null, note: null, tags: ['ui'], created_by: 'u9', created_at: new Date().toISOString(), author: { full_name: 'Оля' } },
 ];
+FIX.design_reviews = [
+  { id: 'dr1', project_id: 'p1', parent_id: null, version: 1, title: 'Головна', url: 'https://figma.com/a', note: 'Перша версія', status: 'changes', requested_by: 'u1', reviewer_id: 'u3', decision_note: 'Більше повітря', created_at: new Date(Date.now() - 2 * 864e5).toISOString(), project: { name: 'CloudVno' }, author: { full_name: 'Нелія' }, reviewer: { full_name: 'Арт' } },
+  { id: 'dr2', project_id: 'p1', parent_id: 'dr1', version: 2, title: 'Головна', url: 'https://figma.com/b', note: null, status: 'pending', requested_by: 'u1', reviewer_id: null, decision_note: null, created_at: new Date().toISOString(), project: { name: 'CloudVno' }, author: { full_name: 'Нелія' }, reviewer: null },
+  { id: 'dr3', project_id: null, parent_id: null, version: 1, title: 'Банер', url: 'https://figma.com/c', note: null, status: 'approved', requested_by: 'u9', reviewer_id: 'u1', decision_note: null, created_at: new Date().toISOString(), project: null, author: { full_name: 'Оля' }, reviewer: { full_name: 'Нелія' } },
+];
+FIX.access_requests = [];
 Object.assign(FIX, window.__FIXPATCH || {});
 function builder(table) {
   const st = { table, single: false, filters: [] };
   const b = {
     select() { return b; }, eq(k, v) { st.filters.push([k, v]); return b; }, neq() { return b; }, or() { return b; }, order() { return b; },
-    limit() { return b; }, in() { return b; }, is() { return b; }, not() { return b; },
+    limit() { return b; }, in() { return b; }, is() { return b; }, not() { return b; }, gte() { return b; }, lte() { return b; }, gt() { return b; },
     single() { st.single = true; return b; }, maybeSingle() { st.single = true; return b; },
     insert(row) { window.__calls.push(['insert', table, row]); st.insert = row; return b; },
     update(row) { window.__calls.push(['update', table, row]); st.update = row; return b; },

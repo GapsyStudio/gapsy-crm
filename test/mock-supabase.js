@@ -18,10 +18,10 @@ const FIX = {
   snippet_projects: [{ snippet: { id: 'sn1', title: 'Blur reveal' }, project: { id: 'p1', name: 'CloudVno' } }],
   pins: [{ id: 'pin1', title: 'Figma', url: 'https://www.figma.com/file/x' }],
   notifications: [{ id: 'n1', title: 'Нова правка для вас', url: '/feedback-item?id=f1', read_at: null, created_at: new Date().toISOString() }],
-  feedback_files: [{ id: 'ff1', path: 'feedback/f1/u1/a.png' }, { id: 'ff2', path: 'feedback/f1/u1/b.png' }],
+  feedback_files: [{ id: 'ff1', path: 'feedback/f1/u1/a.png', created_by: 'u1' }, { id: 'ff2', path: 'feedback/f1/u1/b.png', created_by: 'u2' }],
   feedback_marks: [{ id: 'm1', file_id: 'ff1', x: 0.25, y: 0.5, note: 'Відступ 24px', done: false, created_by: 'u1', created_at: new Date(Date.now()-60e3).toISOString(), author: { full_name: 'Нелія' } },
                    { id: 'm2', file_id: 'ff1', x: 0.8, y: 0.1, note: 'Чужа позначка', done: true, created_by: 'u9', created_at: new Date().toISOString(), author: { full_name: 'Інший' } }],
-  feedback_comments: [{ id: 'c1', body: 'Беру', created_at: new Date().toISOString(), author: { full_name: 'Нелія' } }],
+  feedback_comments: [{ id: 'c1', body: 'Беру', created_at: new Date().toISOString(), author_id: 'u1', author: { full_name: 'Нелія' } }, { id: 'c2', body: 'Чуже', created_at: new Date().toISOString(), author_id: 'u2', author: { full_name: 'Оля' } }],
 };
 FIX.moodboard_items = [
   { id: 'mb1', kind: 'image', path: 'moodboard/u1/a.png', url: null, title: 'Hero', created_at: new Date().toISOString(), author: { full_name: 'Нелія' } },
@@ -49,7 +49,7 @@ function builder(table) {
   const st = { table, single: false, filters: [] };
   const b = {
     select() { return b; }, eq(k, v) { st.filters.push([k, v]); return b; }, neq() { return b; }, or() { return b; }, order() { return b; },
-    limit() { return b; }, in() { return b; }, is() { return b; },
+    limit() { return b; }, in() { return b; }, is() { return b; }, not() { return b; },
     single() { st.single = true; return b; }, maybeSingle() { st.single = true; return b; },
     insert(row) { window.__calls.push(['insert', table, row]); st.insert = row; return b; },
     update(row) { window.__calls.push(['update', table, row]); st.update = row; return b; },

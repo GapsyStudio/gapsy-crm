@@ -1,0 +1,77 @@
+<style>
+  /* =====================================================================
+     /doc · стилі вмісту документа (блоки малює modules/doc.js у .doc_content)
+     Кольори — змінні Webflow, тож темна тема працює сама.
+  ===================================================================== */
+  /* довгі крихти не розширюють верхню панель: один рядок з трикрапкою */
+  [data-crm-crumbs] { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* без іконки — як у Notion: нічого над заголовком; у редагуванні — підказка */
+  .doc_icon:empty { display: none; }
+  .doc_icon.is-editing:empty { display: block; }
+  .doc_icon.is-editing:empty::before { content: '+ Додати іконку'; font-size: 0.875rem; color: var(--text--secondary); }
+  .docs_tree-link [data-field="icon"]:empty, .doc_link-icon:empty { display: inline-block; width: 1.125rem; }
+  .doc_link:hover, .docs_tree-link:hover { background-color: var(--background--hover, #e4e4e4); }
+  .doc_header .page_actions .button { font-size: 0.8125rem; }
+  .doc_content > * { margin: 0; }
+  .doc_content h2, .doc_content h3, .doc_content h4 {
+    font-family: inherit; text-transform: none; letter-spacing: 0; font-weight: 500; line-height: 1.3;
+    color: var(--text--primary); margin-top: 1.5rem;
+  }
+  .doc_content h2 { font-size: 1.5rem; }
+  .doc_content h3 { font-size: 1.25rem; }
+  .doc_content h4 { font-size: 1.0625rem; }
+  .doc_content ul, .doc_content ol { padding-left: 1.25rem; }
+  .doc_content li + li, .doc_content li > ul, .doc_content li > ol { margin-top: 0.25rem; }
+  .doc_content a { color: inherit; text-decoration: underline; text-decoration-color: var(--brand--coral); text-underline-offset: 2px; }
+  .doc_content blockquote {
+    border-left: 3px solid var(--brand--coral); background: var(--background--subtle);
+    padding: 0.75rem 1rem; border-radius: 0 0.5rem 0.5rem 0; font-size: 0.9375rem;
+  }
+  .doc_content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; background: var(--background--subtle); padding: 0.1em 0.35em; border-radius: 0.25rem; }
+  .doc_content pre { background: var(--background--subtle); padding: 1rem; border-radius: 0.75rem; overflow: auto; font-size: 0.8125rem; line-height: 1.6; }
+  .doc_content pre code { background: none; padding: 0; }
+  .doc_content hr { border: 0; border-top: 1px solid var(--border--default); }
+  .doc_content figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border--default); border-radius: 0.75rem; }
+  .doc_content figcaption { margin-top: 0.375rem; font-size: 0.8125rem; color: var(--text--secondary); }
+  /* сторінки-посилання (як у Notion): прості рядки з іконкою, класи doc_links / doc_link з Webflow */
+  .doc_content a.doc_link { text-decoration: none; }
+  .doc_content .doc_links { margin-left: -0.375rem; margin-right: -0.375rem; }
+  .doc_content .doc_links + h2, .doc_content .doc_links + h3 { margin-top: 2rem; }
+  .doc_table { overflow-x: auto; }
+  .doc_table table { border-collapse: collapse; width: 100%; font-size: 0.875rem; line-height: 1.5; }
+  .doc_table th, .doc_table td { border: 1px solid var(--border--default); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; min-width: 8rem; }
+  .doc_table th { background: var(--background--subtle); font-weight: 500; }
+  /* Команда: картки людей за відділами (таблиця з колонками E-mail і телефон/посада) */
+  .doc_people { display: flex; flex-direction: column; gap: 0.75rem; }
+  .doc_people-group { margin-top: 1.25rem; font-size: 1.0625rem; font-weight: 500; }
+  .doc_people-group:first-child { margin-top: 0; }
+  .doc_people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.75rem; }
+  .doc_person { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.875rem 1rem; border: 1px solid var(--border--default); border-radius: 0.75rem; min-width: 0; }
+  .doc_person-avatar { flex: 0 0 2.5rem; height: 2.5rem; border-radius: 50%; display: grid; place-items: center; background: var(--background--subtle); font-size: 0.8125rem; font-weight: 500; }
+  .doc_person-info { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; line-height: 1.4; }
+  .doc_person-name { font-weight: 500; }
+  .doc_person-role { font-size: 0.8125rem; color: var(--text--secondary); margin-bottom: 0.25rem; }
+  .doc_content a.doc_person-contact { font-size: 0.8125rem; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc_content a.doc_person-contact:hover { text-decoration: underline; text-decoration-color: var(--brand--coral); }
+  .doc_checklist { list-style: none; padding-left: 0 !important; }
+  .doc_checklist li { display: flex; gap: 0.5rem; align-items: flex-start; }
+  .doc_checklist .check_box { margin-top: 0.3rem; }
+  .doc_file {
+    display: inline-flex; align-self: flex-start; gap: 0.375rem; padding: 0.5rem 0.75rem; font-size: 0.875rem;
+    border: 1px solid var(--border--default); border-radius: 0.5rem; text-decoration: none !important;
+  }
+  /* режим редагування (PM/admin) */
+  .doc_content.is-editing { display: block; min-height: 12rem; }
+  [data-doc="title"].is-editing, [data-doc="icon"].is-editing { outline: 1px dashed var(--border--default); outline-offset: 4px; border-radius: 0.25rem; }
+  [data-doc="icon"].is-editing { cursor: text; align-self: flex-start; min-width: 1.2em; }
+  .doc_content .ce-block__content, .doc_content .ce-toolbar__content { max-width: none; }
+  html[data-theme="dark"] .doc_content .ce-popover, html[data-theme="dark"] .ce-inline-toolbar, html[data-theme="dark"] .ce-conversion-toolbar {
+    --color-background: #1f1f1f; --color-text-primary: #eeeeee; --color-border: #333333; --color-background-item-hover: #2a2a2a;
+    background: #1f1f1f; color: #eeeeee; border-color: #333333;
+  }
+  html[data-theme="dark"] .ce-toolbar__plus, html[data-theme="dark"] .ce-toolbar__settings-btn { color: #eeeeee; background: #1f1f1f; }
+  @media (max-width: 767px) {
+    .doc_content h2 { font-size: 1.3125rem; }
+    .doc_content pre { font-size: 0.75rem; }
+  }
+</style>

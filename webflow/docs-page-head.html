@@ -1,0 +1,11 @@
+<style>
+  /* /docs: розділи як головна в Notion — група заголовком, під нею прості рядки без рамок */
+  .docs_section .doc_section-head { font-size: 1.0625rem; padding: 0 0.375rem; }
+  .docs_section .doc_links { margin-top: 0.125rem; }
+  .docs_section .doc_link:hover, .card .doc_link:hover { background-color: var(--background--hover, #e4e4e4); }
+  .docs_section > .button { align-self: flex-start; padding-left: 0.375rem; }
+  /* рядки «Нещодавно змінені» у картці */
+  .card .doc_links { border-color: transparent; border-radius: 0; background-color: transparent; row-gap: 0; }
+  /* без емодзі — порожнє місце тієї ж ширини, щоб назви стояли рівно */
+  .doc_link-icon:empty::before { content: ''; display: inline-block; width: 1.25rem; }
+</style>

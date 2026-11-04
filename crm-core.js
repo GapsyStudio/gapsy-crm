@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -161,12 +161,28 @@
     }
     return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
   };
+  // 'YYYY-MM-DD' (колонка date) читаємо як місцеву дату, інакше в США вона з'їжджає на день назад
   CRM.date = (iso, opts = { day: 'numeric', month: 'long', year: 'numeric' }) =>
-    iso ? new Date(iso).toLocaleDateString('uk-UA', opts) : '—';
+    iso ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso).toLocaleDateString('uk-UA', opts) : '—';
   CRM.name = (p) => (p && (p.full_name || p.email)) || '—';
 
   // ---------- правки: статус, пріоритет, дедлайн (v0.4) ----------
   CRM.FEEDBACK_STATUS = { new: ['Нова', 'is-blue'], in_progress: ['В роботі', 'is-yellow'], resolved: ['Закрита', 'is-green'] };
+  /** Етапи проєкту (v0.10). Порядок = порядок у select. */
+  CRM.STAGE = {
+    brief: ['Бриф', ''], design: ['Дизайн', 'is-blue'], review: ['Погодження', 'is-yellow'], development: ['Розробка', 'is-blue'],
+    qa: ['QA', 'is-yellow'], launch: ['Запуск', 'is-green'], support: ['Підтримка', ''],
+  };
+  /** Ризик активного проєкту за найближчою датою (етап або запуск): null | { text, combo, days, date }. */
+  CRM.projectRisk = (p) => {
+    if (!p || p.status !== 'active') return null;
+    const dates = [p.stage_due, p.deadline].filter(Boolean).sort();
+    if (!dates.length) return null;
+    const days = Math.round((new Date(`${dates[0]}T00:00:00`) - new Date(new Date().toDateString())) / 864e5);
+    if (days < 0) return { text: 'Прострочено', combo: 'is-red', days, date: dates[0] };
+    if (days <= 3) return { text: days === 0 ? 'Сьогодні' : `Під ризиком · ${days} дн.`, combo: 'is-yellow', days, date: dates[0] };
+    return null;
+  };
   CRM.PRIORITY = { urgent: ['Терміново', 'is-red'], high: ['Високий', 'is-yellow'], normal: ['Звичайний', ''], low: ['Низький', ''] };
   const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 
@@ -253,6 +269,7 @@
   const optionsCache = {};
   CRM.optionLists = {
     priority: ['low', 'normal', 'high', 'urgent'].map((v) => [v, CRM.PRIORITY[v][0]]),
+    stage: Object.entries(CRM.STAGE).map(([v, [label]]) => [v, label]),
   };
   CRM.options = async (kind) => {
     if (CRM.optionLists[kind]) return CRM.optionLists[kind];
@@ -398,7 +415,7 @@
   // Webflow ставить у нові форми англійські заглушки («Submit», «Please wait...», «Example text»).
   // Замінюємо їх тут, щоб не правити кожну форму в Designer. Свої тексти з Designer не чіпаємо.
   const SUBMIT = { pin: 'Закріпити', project: 'Створити проєкт', 'feedback-new': 'Створити правку', comment: 'Надіслати',
-    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', user: 'Зберегти', profile: 'Зберегти' };
+    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', user: 'Зберегти', profile: 'Зберегти', 'ref-new': 'Додати' };
   const PLACEHOLDER = {
     title: 'Назва', name: 'Назва', client: 'Клієнт', summary: 'Кілька речень: що за проєкт і для кого',
     url: 'https://', live_url: 'https://', staging_url: 'https://…webflow.io', figma_url: 'https://figma.com/…',
@@ -406,14 +423,17 @@
     drive_url: 'https://drive.google.com/…', source_url: 'https://', description: 'Що саме, де і як має бути',
     code: 'Встав код', foundry: 'Напр. Pangram Pangram', pageviews_limit: 'Напр. 10000', notes: 'Нотатки',
     comment: 'Коментар (необовʼязково)', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
-    full_name: 'Імʼя та прізвище',
+    full_name: 'Імʼя та прізвище', q: 'Пошук…', tags: 'Напр. hero, scroll, typography', note: 'Що саме сподобалось',
   };
   function localizeForms() {
     $$('input[type="submit"]').forEach((b) => {
       if (b.value === 'Submit') b.value = SUBMIT[b.closest('form')?.dataset.form] || 'Зберегти';
       if (b.dataset.wait === 'Please wait...') b.dataset.wait = 'Зберігаю…';
     });
-    $$('[placeholder="Example text"]').forEach((i) => { i.placeholder = PLACEHOLDER[i.name] || ''; });
+    // Webflow підставляє «Example text», а поля з WHTML лишаються взагалі без підказки — заповнюємо обидва випадки з мапи
+    $$('input[name], textarea[name]').forEach((i) => {
+      if (i.placeholder === 'Example text' || (!i.getAttribute('placeholder') && PLACEHOLDER[i.name])) i.placeholder = PLACEHOLDER[i.name] || '';
+    });
   }
 
   function bindUI() {
@@ -575,7 +595,7 @@
   // ===================================================================
   // ПОШУК Cmd+K
   // ===================================================================
-  const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', font: 'Шрифт', access: 'Доступ', showcase: 'Showcase', doc: 'Документ' };
+  const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', font: 'Шрифт', access: 'Доступ', showcase: 'Showcase', doc: 'Документ', ref: 'Референс' };
   let searchInput = null;
   let searchTimer = null;
   function openSearch() {
@@ -633,7 +653,7 @@
     const rows = [...data.map((r) => ({ ...r, type: KIND[r.kind] || r.kind })), ...quickRows(q).filter((r) => r.type === 'Розділ')];
     const items = CRM.render('search', rows, (el, r) => {
       el.href = r.url;
-      if (r.kind === 'showcase') el.target = '_blank';
+      if (r.kind === 'showcase' || r.kind === 'ref') { el.target = '_blank'; el.rel = 'noopener'; }
     });
     items[0]?.classList.add('is-active');
   }

@@ -2,8 +2,16 @@
  * Розмітка: [data-element="showcase"], таби data-tabs="category", списки showcase-best / showcase-all,
  * секція [data-showcase-best], форма data-form="showcase-item" з дропзоною data-dropzone="showcase-cover".
  * Додають і редагують PM/admin (RLS у Supabase).
- * v0.11: у модалці кнопка data-action="showcase-delete" (видна лише при редагуванні). */
-CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, action, dropzone, upload, signedUrls, options }) => {
+ * v0.11: у модалці кнопка data-action="showcase-delete" (видна лише при редагуванні).
+ * v0.12: пропозиції від команди. Кнопка data-action="showcase-propose" (для всіх, у кого немає права додавати) відкриває
+ *   ту саму модалку; запис іде зі status='proposed' (поле is_best ховається — [data-showcase-best-field]).
+ *   Секція [data-showcase-proposed] + список data-list="showcase-proposed" (поля title, category, who, status, review_note;
+ *   дії showcase-publish / showcase-reject — PM/admin, showcase-withdraw — автор). PM/admin бачать усі пропозиції, автор — свої. */
+CRM.module('showcase', async (root, { sb, render, onSubmit, modal, toast, badge, action, dropzone, upload, signedUrls, options, can, name }) => {
+  const isManager = can('pm,admin');
+  const STATUS = { proposed: ['На розгляді', 'is-yellow'], rejected: ['Відхилено', 'is-red'] };
+  let proposing = false; // модалка відкрита як «Запропонувати»
+  let proposals = [];
   const CAT = { site: ['Сайт', 'is-blue'], figma: ['Figma', 'is-yellow'], presentation: ['Презентація', 'is-green'], brand: ['Brand kit', 'is-red'] };
   let items = [];
   let tab = 'all';
@@ -12,11 +20,15 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
 
   async function load() {
     const { data, error } = await sb.from('showcase_items')
-      .select('id, title, url, category, cover_path, is_best, project_id, project:projects(name)')
+      .select('id, title, url, category, cover_path, is_best, project_id, status, review_note, created_by, project:projects(name), author:profiles!showcase_items_created_by_fkey(full_name, email)')
       .order('sort').order('created_at', { ascending: false });
     if (error) return CRM.fail(error);
     const urls = await signedUrls(data.map((i) => i.cover_path));
-    items = data.map((i) => ({ ...i, project: i.project?.name || '', cover_url: urls[i.cover_path] || '' }));
+    const all = data.map((i) => ({ ...i, project: i.project?.name || '', cover_url: urls[i.cover_path] || '' }));
+    items = all.filter((i) => (i.status || 'published') === 'published');
+    // RLS віддає пропозиції лише автору й PM/admin; PM не бачить чужих відхилених — вони вже вирішені
+    proposals = all.filter((i) => i.status === 'proposed' || (i.status === 'rejected' && i.created_by === CRM.user?.id));
+    drawProposals();
     draw();
   }
 
@@ -40,6 +52,54 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
     render('showcase-all', list, fillCard);
   }
 
+  function drawProposals() {
+    const box = root.querySelector('[data-showcase-proposed]');
+    if (box) box.hidden = !proposals.length;
+    render('showcase-proposed', proposals.map((i) => ({
+      ...i, who: name(i.author), review_note: i.review_note ? `Коментар: ${i.review_note}` : '',
+    })), (el, i) => {
+      el.dataset.id = i.id;
+      badge(el.querySelector('[data-field="category"]'), i.category, CAT);
+      badge(el.querySelector('[data-field="status"]'), i.status, STATUS);
+      const link = el.querySelector('[data-proposal-link]');
+      if (link && /^https?:\/\//.test(i.url)) { link.href = i.url; link.target = '_blank'; link.rel = 'noopener'; }
+      const note = el.querySelector('[data-field="review_note"]');
+      if (note) note.hidden = !i.review_note;
+      el.querySelectorAll('[data-action="showcase-publish"], [data-action="showcase-reject"]').forEach((b) => { b.hidden = !isManager || i.status !== 'proposed'; });
+      const w = el.querySelector('[data-action="showcase-withdraw"]');
+      if (w) w.hidden = i.created_by !== CRM.user?.id;
+    });
+  }
+  const byProposal = (el) => proposals.find((i) => i.id === el.closest('[data-id]')?.dataset.id);
+  action('showcase-publish', async (el) => {
+    const i = byProposal(el);
+    if (!i) return;
+    const { error } = await sb.from('showcase_items').update({ status: 'published', review_note: null }).eq('id', i.id);
+    if (error) return CRM.fail(error);
+    toast('Опубліковано в Showcase');
+    load();
+  });
+  action('showcase-reject', async (el) => {
+    const i = byProposal(el);
+    if (!i) return;
+    const note = prompt(`Чому відхиляємо «${i.title}»? Автор побачить цей коментар.`);
+    if (note === null) return;
+    if (!note.trim()) return toast('Напиши коротко причину');
+    const { error } = await sb.from('showcase_items').update({ status: 'rejected', review_note: note.trim().slice(0, 1000) }).eq('id', i.id);
+    if (error) return CRM.fail(error);
+    toast('Пропозицію відхилено');
+    load();
+  });
+  action('showcase-withdraw', async (el) => {
+    const i = byProposal(el);
+    if (!i || !confirm(`Прибрати пропозицію «${i.title}»?`)) return;
+    const { error } = await sb.from('showcase_items').delete().eq('id', i.id);
+    if (error) return CRM.fail(error);
+    CRM.removeFiles([i.cover_path]);
+    toast('Пропозицію прибрано');
+    load();
+  });
+
   const byEl = (el) => items.find((i) => i.id === el.closest('[data-id]')?.dataset.id);
 
   action('copy-link', async (el) => {
@@ -52,6 +112,7 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
   action('edit', async (el) => {
     const i = byEl(el);
     if (!i) return;
+    setProposing(false);
     editId = i.id;
     const m = modal.open('showcase-item');
     const f = m.querySelector('[data-form="showcase-item"]');
@@ -79,7 +140,23 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
     toast('Прибрано з Showcase');
     load();
   });
+  const setProposing = (on) => {
+    proposing = on;
+    const m = document.querySelector('[data-modal="showcase-item"]');
+    m?.querySelectorAll('[data-showcase-best-field]').forEach((x) => { x.hidden = on; });
+    m?.querySelectorAll('[data-showcase-modal-title]').forEach((t) => { t.textContent = on ? 'Запропонувати роботу' : 'Робота в Showcase'; });
+  };
+  action('showcase-propose', () => {
+    editId = null;
+    cover.reset();
+    root.querySelector('[data-form="showcase-item"]')?.reset();
+    const del = document.querySelector('[data-modal="showcase-item"] [data-action="showcase-delete"]');
+    if (del) del.hidden = true;
+    setProposing(true);
+    modal.open('showcase-item');
+  });
   root.querySelector('[data-action="open:showcase-item"]')?.addEventListener('click', () => {
+    setProposing(false);
     editId = null;
     cover.reset();
     root.querySelector('[data-form="showcase-item"]')?.reset();
@@ -90,8 +167,10 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
   onSubmit('showcase-item', async (d, form) => {
     const row = {
       title: d.title.trim(), url: d.url.trim(), category: d.category,
-      project_id: d.project_id || null, is_best: !!d.is_best,
+      project_id: d.project_id || null, is_best: proposing ? false : !!d.is_best,
     };
+    if (!/^https?:\/\//i.test(row.url)) return toast('Посилання має починатися з https://');
+    if (proposing && !editId) row.status = 'proposed';
     if (cover.files[0]) row.cover_path = await upload(cover.files[0], 'showcase');
     const { error } = editId
       ? await sb.from('showcase_items').update(row).eq('id', editId)
@@ -100,11 +179,13 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
     form.reset();
     cover.reset();
     modal.close();
-    toast(editId ? 'Роботу оновлено' : 'Роботу додано');
+    toast(editId ? 'Роботу оновлено' : proposing ? 'Дякуємо! PM подивиться пропозицію' : 'Роботу додано');
+    setProposing(false);
     editId = null;
     load();
   });
 
   root.addEventListener('crm:tab', (e) => { tab = e.detail.value; draw(); });
-  load();
+  await load();
+  if (location.hash === '#proposed') root.querySelector('[data-showcase-proposed]')?.scrollIntoView({ block: 'start' });
 });

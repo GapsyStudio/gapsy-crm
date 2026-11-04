@@ -4,7 +4,9 @@
  * v0.10 «Пульс агенції» (лише PM/admin, обгортка [data-pulse] з data-crm-role="pm,admin"):
  *   лічильники [data-pulse-count="risk|overdue|handoffs|active"],
  *   data-list="pulse-risk" — проєкти під ризиком (поля name, stage, due; бейдж risk), посилання на картку;
- *   data-list="workload" — люди (поля name, role, projects, open, overdue), найзавантаженіші вгорі. */
+ *   data-list="workload" — люди (поля name, role, projects, open, overdue), найзавантаженіші вгорі.
+ * v0.12 (PM/admin): data-list="renewals" — підписки з продовженням у найближчі 30 днів (поля name, price, when; is-red ≤ 7 днів),
+ *   обгортка [data-renewals] ховається, якщо нічого немає. Лічильник [data-pulse-count="reviews"] — дизайн на погодженні. */
 CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge, crumbs, time, date, name, can }) => {
   crumbs('Головна');
   const STATUS = CRM.FEEDBACK_STATUS;
@@ -85,7 +87,10 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     const overdue = fb.data.filter((f) => f.due_date && f.due_date < todayStr);
     const stuck = ho.data.filter((h) => h.submitted_at && Date.now() - new Date(h.submitted_at) > 2 * 864e5);
     const counts = { risk: risky.length, overdue: overdue.length, handoffs: stuck.length, active: active.length };
+    const { count: reviewsCount } = await sb.from('design_reviews').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+    counts.reviews = reviewsCount || 0;
     root.querySelectorAll('[data-pulse-count]').forEach((el) => { el.textContent = counts[el.dataset.pulseCount] ?? '0'; });
+    loadRenewals();
 
     const short = (d) => date(d, { day: 'numeric', month: 'short' });
     render('pulse-risk', risky.slice(0, 6).map((p) => ({ ...p, due: short(p.risk.date) })), (el, p) => {
@@ -104,6 +109,28 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
       .sort((a, b) => b.overdue - a.overdue || b.open + b.projects - (a.open + a.projects));
     render('workload', rows, (el, u) => {
       el.querySelector('[data-field="overdue"]')?.toggleAttribute('hidden', !u.overdue);
+    });
+  }
+
+  // ---------- Скоро продовження підписок (PM/admin) ----------
+  async function loadRenewals() {
+    const box = root.querySelector('[data-renewals]');
+    if (!box) return;
+    const from = new Date().toLocaleDateString('sv');
+    const to = new Date(Date.now() + 30 * 864e5).toLocaleDateString('sv');
+    const { data, error } = await sb.from('access_items').select('id, name, price, currency, period, renews_on')
+      .gte('renews_on', from).lte('renews_on', to).order('renews_on');
+    if (error) return console.error(error);
+    box.hidden = !data.length;
+    const PER = { month: ' / міс', year: ' / рік' };
+    render('renewals', data.map((i) => ({
+      ...i,
+      price: i.price != null ? `${Number(i.price).toLocaleString('uk-UA')} ${i.currency}${PER[i.period] || ''}` : '',
+      when: date(i.renews_on, { day: 'numeric', month: 'short' }),
+    })), (el, i) => {
+      if (el.tagName === 'A') el.href = `/access?id=${i.id}`;
+      const days = Math.ceil((new Date(`${i.renews_on}T00:00:00`) - new Date(new Date().toDateString())) / 864e5);
+      el.querySelector('[data-field="when"]')?.classList.toggle('is-red', days <= 7);
     });
   }
 

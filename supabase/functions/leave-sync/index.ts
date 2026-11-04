@@ -1,5 +1,5 @@
-// Gapsy CRM · Edge Function leave-sync (v0.13.0)
-// Читає з ClickUp затрекані години на річних задачах «GPS | Vacation» і «GPS | Sick Days» кожної людини
+// Gapsy CRM · Edge Function leave-sync (v0.14.0)
+// Читає з ClickUp річний ліміт (Time estimate) і затрекані години (Track time) на річних задачах «GPS | Vacation» і «GPS | Sick Days» кожної людини
 // і кладе їх у public.leave_balances. У ClickUp нічого не пише.
 //
 // Секрети (Supabase → Edge Functions → Secrets):
@@ -22,7 +22,7 @@ const cors = (origin: string | null) => ({
   Vary: 'Origin',
 });
 
-type Task = { id: string; name: string; due_date?: string | null; time_spent?: number | null; assignees?: { email?: string }[] };
+type Task = { id: string; name: string; due_date?: string | null; time_spent?: number | null; time_estimate?: number | null; assignees?: { email?: string }[] };
 
 async function clickup(path: string, token: string) {
   const res = await fetch(`https://api.clickup.com/api/v2${path}`, { headers: { Authorization: token } });
@@ -41,19 +41,25 @@ async function listTasks(listId: string, token: string): Promise<Task[]> {
   return out;
 }
 
-/** email → { hours, taskId } лише для задач поточного року (термін у цьому році або без терміну). */
+/** email → { hours (Track time), limit (Time estimate або null), taskId } лише для задач поточного року (термін у цьому році або без терміну). */
 async function hoursByEmail(listId: string, token: string) {
   const year = new Date().getUTCFullYear();
   const tasks = (await listTasks(listId, token)).filter((t) => !t.due_date || new Date(Number(t.due_date)).getUTCFullYear() === year);
-  const map = new Map<string, { hours: number; taskId: string }>();
+  const map = new Map<string, { hours: number; limit: number | null; taskId: string }>();
   for (const t of tasks) {
     let ms = typeof t.time_spent === 'number' ? t.time_spent : null;
-    if (ms === null) ms = Number((await clickup(`/task/${t.id}`, token)).time_spent || 0);
+    let est = typeof t.time_estimate === 'number' ? t.time_estimate : null;
+    if (ms === null) {
+      const full = await clickup(`/task/${t.id}`, token);
+      ms = Number(full.time_spent || 0);
+      if (est === null && typeof full.time_estimate === 'number') est = full.time_estimate;
+    }
     for (const a of t.assignees || []) {
       const email = (a.email || '').toLowerCase();
       if (!email) continue;
-      const cur = map.get(email) || { hours: 0, taskId: t.id };
+      const cur = map.get(email) || { hours: 0, limit: null, taskId: t.id };
       cur.hours += ms / 3_600_000;
+      if (est !== null) cur.limit = (cur.limit || 0) + est / 3_600_000;
       map.set(email, cur);
     }
   }
@@ -100,6 +106,8 @@ Deno.serve(async (req) => {
         user_id: p.id,
         vacation_used_h: Math.round((vac.get(e)?.hours || 0) * 10) / 10,
         sick_used_h: Math.round((sick.get(e)?.hours || 0) * 10) / 10,
+        vacation_limit_h: vac.get(e)?.limit != null ? Math.round(vac.get(e)!.limit! * 10) / 10 : null,
+        sick_limit_h: sick.get(e)?.limit != null ? Math.round(sick.get(e)!.limit! * 10) / 10 : null,
         vacation_task_id: vac.get(e)?.taskId || null,
         sick_task_id: sick.get(e)?.taskId || null,
         synced_at: now,

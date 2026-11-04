@@ -3,7 +3,7 @@
  *   [data-balance="vacation|sick"] — скільки робочих днів лишилось (може бути з дробом: 11,5);
  *   [data-balance-sub="vacation|sick"] — «56 з 120 год · заплановано 16 год»;
  *   поза сіткою, у тій самій секції: [data-balance="updated"] — коли оновлено з ClickUp, [data-action="leave-sync"] — оновити.
- * Залишок = ліміт − затрекано в ClickUp − погоджене, але ще не внесене в ClickUp (leave_summary у Supabase).
+ * Ліміт = власний з Адмінки → Time estimate задачі в ClickUp → правило (v0.14). Залишок = ліміт − затрекано в ClickUp − погоджене, але ще не внесене в ClickUp (leave_summary у Supabase).
  * Години з ClickUp оновлює Edge Function leave-sync (не частіше ніж раз на 10 хв). */
 CRM.module('leave-balance', async (root, { sb, user, toast, action, time }) => {
   const section = root.closest('section') || root.parentElement || root;

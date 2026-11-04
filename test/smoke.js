@@ -52,7 +52,7 @@ const { chromium } = require('playwright');
 
   await go('/showcase');
   log('SHOWCASE best:', await n('[data-list="showcase-best"] [data-rendered]'), '| all:', await n('[data-list="showcase-all"] [data-rendered]'), '| cat badge:', await t('[data-list="showcase-best"] [data-rendered] [data-field="category"]'));
-  await p.click('[data-tab="figma"]'); log('  figma all state:', await p.$eval('[data-list="showcase-all"]', e=>e.dataset.state), '| best hidden:', await p.$eval('[data-showcase-best]', e=>e.hidden));
+  await p.click('[data-tabs="category"] [data-tab="site"]'); log('  figma all state:', await p.$eval('[data-list="showcase-all"]', e=>e.dataset.state), '| best hidden:', await p.$eval('[data-showcase-best]', e=>e.hidden));
   await p.click('[data-tab="all"]'); await p.click('[data-list="showcase-best"] [data-rendered] [data-action="copy-link"]'); await p.waitForTimeout(200);
   log('  clipboard:', await p.evaluate(()=>navigator.clipboard.readText()));
   await p.click('[data-list="showcase-all"] [data-rendered] [data-action="edit"]'); await p.waitForTimeout(200);

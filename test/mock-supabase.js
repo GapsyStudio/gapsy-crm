@@ -55,6 +55,10 @@ FIX.leave_summary = [
   { user_id: 'u1', full_name: 'Нелія', email: 'nelia@gapsy.studio', avatar_url: null, hired_on: '2026-08-01', vacation_limit_h: 120, vacation_used_h: 56, vacation_planned_h: 16, sick_limit_h: 40, sick_used_h: 8, sick_planned_h: 0, synced_at: new Date().toISOString(), matched: true },
   { user_id: 'u2', full_name: 'Оля', email: 'olya@gapsy.studio', avatar_url: null, hired_on: '2021-01-10', vacation_limit_h: 120, vacation_used_h: 119, vacation_planned_h: 0, sick_limit_h: 80, sick_used_h: 80, sick_planned_h: 0, synced_at: new Date().toISOString(), matched: false },
 ];
+FIX.showcase_categories = [
+  { slug: 'site', label: 'Сайт', color: 'is-blue', sort: 10 }, { slug: 'figma', label: 'Figma', color: 'is-yellow', sort: 20 },
+  { slug: 'saas', label: 'SaaS', color: 'is-blue', sort: 50 }, { slug: 'web3', label: 'Web3', color: 'is-red', sort: 90 },
+];
 FIX.company_holidays = [{ day: D(20), title: 'Тестове свято' }];
 FIX.leave_balances = [{ user_id: 'u2', vacation_task_id: 'cu123', sick_task_id: 'cu124' }];
 FIX.leave_requests = [

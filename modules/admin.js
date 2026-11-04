@@ -1,7 +1,7 @@
 /* Gapsy CRM · modules/admin.js — Адмінка (/admin, лише admin)
  * Розмітка: [data-element="admin"], списки users-pending / users, форма data-form="user" (модалка data-modal="user").
  * Зміна ролі й ClickUp task id — через RPC admin_update_user (перевірка ролі в базі).
- * v0.13: поля hired_on (date), clickup_email, leave_vacation_hours, leave_sick_hours (порожньо = 120 / 40 + 8 за рік), чекбокс is_leave_approver → RPC admin_set_leave.
+ * v0.13: поля hired_on (date), clickup_email, leave_vacation_hours, leave_sick_hours (порожньо = Time estimate задачі в ClickUp, якщо його немає — 120 / 40 + 8 за рік), чекбокс is_leave_approver → RPC admin_set_leave.
  * v0.12: чекбокс name="is_art_director" у формі user → RPC admin_set_art_director; у рядку поле [data-field="ad"] («Арт-директор»). */
 CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, action, name, time }) => {
   const ROLE = {

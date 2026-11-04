@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.12.0
+ * Gapsy CRM · crm-core.js v0.12.1
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -248,7 +248,9 @@
   CRM.onSubmit = (key, fn) => { forms[key] = fn; };
   document.addEventListener('submit', async (e) => {
     const form = e.target.closest('[data-form]');
-    if (!form || !forms[form.dataset.form]) return;
+    if (!form) return;
+    // v0.12.1: форма без обробника (модуль ще не підключений) не повинна йти в Webflow Forms — дані лишаються тільки в CRM
+    if (!forms[form.dataset.form]) { e.preventDefault(); e.stopImmediatePropagation(); CRM.toast?.('Ця дія ще недоступна'); return; }
     e.preventDefault();
     e.stopImmediatePropagation();
     const btn = form.querySelector('[type="submit"]');
@@ -457,6 +459,15 @@
     // Webflow підставляє «Example text», а поля з WHTML лишаються взагалі без підказки — заповнюємо обидва випадки з мапи
     $$('input[name], textarea[name]').forEach((i) => {
       if (i.placeholder === 'Example text' || (!i.getAttribute('placeholder') && PLACEHOLDER[i.name])) i.placeholder = PLACEHOLDER[i.name] || '';
+    });
+    // v0.12.1 a11y: Webflow ставить у label for="<name>", а не id поля — скрінрідер і клік по підпису не працюють.
+    // Звʼязуємо підпис із полем у тому ж .form_field (поле без id отримує стабільний id з імені форми й поля).
+    $$('.form_field').forEach((f) => {
+      const l = f.querySelector('label');
+      const c = f.querySelector('input:not([type="hidden"]):not([type="checkbox"]), select, textarea');
+      if (!l || !c || (c.labels && c.labels.length)) return;
+      if (!c.id) c.id = `f-${c.closest('form')?.dataset.form || 'x'}-${c.name || Math.random().toString(36).slice(2, 7)}`;
+      l.htmlFor = c.id;
     });
   }
 

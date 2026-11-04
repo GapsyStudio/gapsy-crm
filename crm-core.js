@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.12.1
+ * Gapsy CRM · crm-core.js v0.13.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'reviews', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'reviews', 'leave-balance', 'leave', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -440,7 +440,7 @@
   // Webflow ставить у нові форми англійські заглушки («Submit», «Please wait...», «Example text»).
   // Замінюємо їх тут, щоб не правити кожну форму в Designer. Свої тексти з Designer не чіпаємо.
   const SUBMIT = { pin: 'Закріпити', project: 'Створити проєкт', 'feedback-new': 'Створити правку', comment: 'Надіслати',
-    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', user: 'Зберегти', profile: 'Зберегти', 'ref-new': 'Додати',
+    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', holiday: 'Додати', user: 'Зберегти', profile: 'Зберегти', 'ref-new': 'Додати',
     review: 'Надіслати на погодження', 'access-request': 'Попросити доступ' };
   const PLACEHOLDER = {
     title: 'Назва', name: 'Назва', client: 'Клієнт', summary: 'Кілька речень: що за проєкт і для кого',
@@ -448,7 +448,8 @@
     webflow_url: 'https://webflow.com/design/…', github_url: 'https://github.com/…', clickup_url: 'https://app.clickup.com/…',
     drive_url: 'https://drive.google.com/…', source_url: 'https://', description: 'Що саме, де і як має бути',
     code: 'Встав код', foundry: 'Напр. Pangram Pangram', pageviews_limit: 'Напр. 10000', notes: 'Нотатки',
-    comment: 'Коментар (необовʼязково)', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
+    comment: 'Коментар (необовʼязково)', clickup_email: 'Лише якщо в ClickUp інша пошта', leave_vacation_hours: '120 за замовчуванням',
+    leave_sick_hours: '40 + 8 за кожен рік', hours: '8', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
     full_name: 'Імʼя та прізвище', reason: 'Навіщо потрібен доступ (необовʼязково)', price: 'Напр. 15', q: 'Пошук…', tags: 'Напр. hero, scroll, typography', note: 'Що саме сподобалось',
   };
   function localizeForms() {

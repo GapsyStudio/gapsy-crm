@@ -26,7 +26,7 @@ const { chromium } = require('playwright');
   await p.click('[data-tab="service"]'); await p.fill('[data-access-search]', 'web'); await p.waitForTimeout(100); log('  search web:', await n(row));
   await p.fill('[data-access-search]', '');
   // показати доступ
-  await p.click(`${row} [data-action="access-reveal"]`); await p.waitForTimeout(300);
+  await p.click(`${row} [data-action="access-reveal"]:not([data-access-grant])`); await p.waitForTimeout(300);
   log('  reveal: open', await open('access-reveal'), '| title', await t('[data-modal="access-reveal"] [data-access-title]'), '| login', await t('[data-reveal="login"]'),
     '| password shown', (await t('[data-reveal="password"]')) === 'S3cret!', '| extra row hidden', await hidden('[data-reveal-row]'), '| timer', await t('[data-reveal-timer]'));
   log('  rpc:', JSON.stringify((await calls('rpc')).filter((c) => c[1].startsWith('access')).map((c) => [c[1], c[2]])));

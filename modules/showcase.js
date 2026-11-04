@@ -1,7 +1,8 @@
 /* Gapsy CRM · modules/showcase.js — Showcase (/showcase)
  * Розмітка: [data-element="showcase"], таби data-tabs="category", списки showcase-best / showcase-all,
  * секція [data-showcase-best], форма data-form="showcase-item" з дропзоною data-dropzone="showcase-cover".
- * Додають і редагують PM/admin (RLS у Supabase). */
+ * Додають і редагують PM/admin (RLS у Supabase).
+ * v0.11: у модалці кнопка data-action="showcase-delete" (видна лише при редагуванні). */
 CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, action, dropzone, upload, signedUrls, options }) => {
   const CAT = { site: ['Сайт', 'is-blue'], figma: ['Figma', 'is-yellow'], presentation: ['Презентація', 'is-green'], brand: ['Brand kit', 'is-red'] };
   let items = [];
@@ -62,11 +63,28 @@ CRM.module('showcase', (root, { sb, render, onSubmit, modal, toast, badge, actio
     if (f.elements.is_best) f.elements.is_best.checked = i.is_best;
     await options('projects');
     setTimeout(() => { f.elements.project_id.value = i.project_id || ''; }, 0);
+    const del = m.querySelector('[data-action="showcase-delete"]');
+    if (del) del.hidden = false;
+  });
+
+  // v0.11: видалення роботи (кнопка data-action="showcase-delete" у модалці, лише при редагуванні; RLS — PM/admin)
+  action('showcase-delete', async () => {
+    const i = items.find((x) => x.id === editId);
+    if (!i || !confirm(`Прибрати «${i.title}» з Showcase?`)) return;
+    const { error } = await sb.from('showcase_items').delete().eq('id', i.id);
+    if (error) return CRM.fail(error);
+    CRM.removeFiles([i.cover_path]);
+    modal.close();
+    editId = null;
+    toast('Прибрано з Showcase');
+    load();
   });
   root.querySelector('[data-action="open:showcase-item"]')?.addEventListener('click', () => {
     editId = null;
     cover.reset();
     root.querySelector('[data-form="showcase-item"]')?.reset();
+    const del = document.querySelector('[data-modal="showcase-item"] [data-action="showcase-delete"]');
+    if (del) del.hidden = true;
   });
 
   onSubmit('showcase-item', async (d, form) => {

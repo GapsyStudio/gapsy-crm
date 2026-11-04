@@ -94,6 +94,13 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
       });
     });
     if (form.elements.stack) form.elements.stack.value = (project.stack || []).join(', ');
+    const del = m.querySelector('[data-action="project-delete"]');
+    if (del) del.hidden = !can('pm,admin');
+  });
+
+  // v0.11: видалення проєкту (кнопка data-action="project-delete" у модалці project-edit, лише PM/admin)
+  action('project-delete', async () => {
+    if (await CRM.deleteProject(project)) { modal.close(); location.replace('/projects'); }
   });
 
   onSubmit('project-edit', async (d) => {

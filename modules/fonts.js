@@ -12,6 +12,8 @@
  *  2) Блок у картці проєкту — [data-element="fonts"][data-fonts-mode="project"]: data-list="project-fonts"
  *     (name, license, warning), посилання на /fonts?id=.
  * Попередження: шрифт використано в проєкті, а web-ліцензії немає (крім free), або ліцензія пробна/невідома.
+ * v0.11: кнопка data-action="font-upload" і перетягування файлів на сторінку ([data-font-drop] або весь root, клас is-dragover):
+ *       сім'я з назви файлу, новий шрифт створюється сам (ліцензія «невідомо»), до наявного — файли додаються.
  * Права: усе редагує вся команда (RLS). Файли — bucket media, папка fonts/<uid>/. */
 CRM.module('fonts', async (root, CRM) => {
   const { sb, render, onSubmit, modal, toast, action, upload, signedUrls, badge, param } = CRM;
@@ -263,20 +265,90 @@ CRM.module('fonts', async (root, CRM) => {
 
   action('font-files-add', async () => {
     if (!edit) return;
-    const files = (await pickFiles('.woff2,.woff,.ttf,.otf', true)).filter((f) => FONT_EXT.test(f.name) && f.size <= 10 * 1024 * 1024);
-    if (!files.length) return toast('Потрібні файли .woff2, .woff, .ttf або .otf до 10 МБ');
-    try {
-      const paths = await Promise.all(files.map((f) => upload(f, 'fonts')));
-      const { error } = await sb.from('font_files').insert(paths.map((path, k) => ({
-        font_id: edit.id, path, filename: files[k].name, ...variantOf(files[k].name),
-      })));
-      if (error) throw error;
-      toast(`Файлів додано: ${files.length}`);
-      await load();
-      edit = fonts.find((f) => f.id === edit.id);
-      drawFiles();
-    } catch (err) { CRM.fail(err); }
+    uploadFontFiles(await pickFiles('.woff2,.woff,.ttf,.otf', true), edit);
   });
+
+  // ---------- v0.11: завантаження файлів одразу зі сторінки ----------
+  // Кнопка data-action="font-upload" або перетягування файлів на сторінку.
+  // Сім'ю беремо з назви файлу (NeueMontreal-BoldItalic.otf → «Neue Montreal»); якщо такий шрифт уже є — файли додаються до нього.
+  const VARIANT_WORDS = /[-_ ]?(hairline|thin|extra.?light|ultra.?light|light|book|regular|normal|roman|medium|semi.?bold|demi.?bold|bold|extra.?bold|ultra.?bold|heavy|black|italic|oblique|variable|vf|web|webfont|\d{3})\b/gi;
+  const familyOf = (filename) => {
+    let base = filename.replace(/\.[^.]+$/, '').replace(/\s*\(\d+\)$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
+    for (let i = 0; i < 3; i++) base = base.replace(VARIANT_WORDS, '');
+    base = base.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return base || filename.replace(/\.[^.]+$/, '');
+  };
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9а-яіїєґ]/gi, '');
+
+  async function uploadFontFiles(list, into = null) {
+    const files = list.filter((f) => FONT_EXT.test(f.name));
+    const big = files.filter((f) => f.size > 10 * 1024 * 1024);
+    const ok = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    if (!ok.length) return toast(big.length ? 'Файли мають бути до 10 МБ' : 'Потрібні файли .woff2, .woff, .ttf або .otf');
+    const groups = new Map();
+    ok.forEach((f) => {
+      const fam = into ? into.name : familyOf(f.name);
+      const key = into ? 'into' : norm(fam);
+      if (!groups.has(key)) groups.set(key, { name: fam, files: [] });
+      groups.get(key).files.push(f);
+    });
+    toast(`Завантажую ${ok.length} ${ok.length === 1 ? 'файл' : 'файлів'}…`);
+    const touched = [];
+    try {
+      for (const g of groups.values()) {
+        let font = into || fonts.find((f) => norm(f.name) === norm(g.name));
+        if (!font) {
+          const { data, error } = await sb.from('fonts').insert({ name: g.name, license: 'unknown', owner: 'agency', allowed: [] })
+            .select('id, name').single();
+          if (error) throw error;
+          font = { ...data, font_files: [] };
+        }
+        const have = new Set((font.font_files || []).map((x) => x.filename));
+        const fresh = g.files.filter((f) => !have.has(f.name));
+        if (fresh.length) {
+          const paths = await Promise.all(fresh.map((f) => upload(f, 'fonts')));
+          const { error } = await sb.from('font_files').insert(paths.map((path, k) => ({
+            font_id: font.id, path, filename: fresh[k].name, ...variantOf(fresh[k].name),
+          })));
+          if (error) throw error;
+        }
+        touched.push(font.id);
+      }
+      await load();
+      const skipped = big.length ? ` Пропущено завеликих: ${big.length}.` : '';
+      toast(groups.size === 1 ? `Файли додано.${skipped} Перевір ліцензію шрифту` : `Додано шрифтів: ${groups.size}.${skipped} Перевір ліцензії`);
+      if (into) { edit = fonts.find((f) => f.id === into.id); drawFiles(); } else if (touched.length === 1) openFont(fonts.find((f) => f.id === touched[0]));
+    } catch (err) { CRM.fail(err); }
+  }
+
+  action('font-upload', async () => uploadFontFiles(await pickFiles('.woff2,.woff,.ttf,.otf', true)));
+
+  // перетягування файлів на сторінку (поза модалкою)
+  const drop = root.querySelector('[data-font-drop]') || root;
+  ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+    e.preventDefault();
+    drop.classList.add('is-dragover');
+  }));
+  ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => {
+    if (t === 'dragleave' && drop.contains(e.relatedTarget)) return;
+    drop.classList.remove('is-dragover');
+  }));
+  const onDrop = (e) => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const inModal = e.target.closest?.('[data-modal="font"]');
+    if (inModal && !edit) return toast('Спершу збережи шрифт, потім додай файли');
+    uploadFontFiles([...e.dataTransfer.files], inModal ? edit : null);
+  };
+  drop.addEventListener('drop', onDrop);
+  // модалка може лежати поза root — приймаємо файли й на неї
+  const fontModal = document.querySelector('[data-modal="font"]');
+  if (fontModal && !drop.contains(fontModal)) {
+    ['dragenter', 'dragover'].forEach((t) => fontModal.addEventListener(t, (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); }));
+    fontModal.addEventListener('drop', onDrop);
+  }
 
   action('font-license-add', async () => {
     if (!edit) return;

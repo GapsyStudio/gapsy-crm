@@ -2,8 +2,9 @@
  * Розмітка: [data-element="projects"], таби data-tabs="status", список data-list="projects", форма data-form="project".
  * Рядок (v0.10): поля stage (бейдж етапу), due (найближча дата), risk (бейдж «Під ризиком» / «Прострочено», ховається, якщо ризику немає).
  * Форма: + поля stage (select data-options="stage"), stage_due, deadline (type=date). Активні проєкти під ризиком — угорі списку.
- * Клік по проєкту → картка проєкту (/project?id=). Shift+клік (PM/admin) → редагування. */
-CRM.module('projects', (root, { sb, render, onSubmit, modal, toast, badge, can, date }) => {
+ * Клік по проєкту → картка проєкту (/project?id=). Shift+клік (PM/admin) → редагування.
+ * v0.11: у модалці кнопка data-action="project-delete" (видна лише при редагуванні). */
+CRM.module('projects', (root, { sb, render, onSubmit, modal, toast, badge, can, date, action }) => {
   const STATUS = { active: ['Активний', 'is-blue'], paused: ['Пауза', 'is-yellow'], done: ['Завершений', 'is-green'] };
   const plural = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'правка' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'правки' : 'правок'}`;
   let all = [];
@@ -53,9 +54,20 @@ CRM.module('projects', (root, { sb, render, onSubmit, modal, toast, badge, can, 
     CRM.fillSelects(m).then(() => {
       if (p) FIELDS.forEach((k) => { if (form.elements[k]) form.elements[k].value = p[k] || ''; });
     });
+    const del = m.querySelector('[data-action="project-delete"]');
+    if (del) del.hidden = !p;
   }
+  // v0.11: видалення з модалки (лише в режимі редагування)
+  action('project-delete', async () => {
+    const p = all.find((x) => x.id === editId);
+    if (await CRM.deleteProject(p)) { modal.close(); editId = null; load(); }
+  });
   // кнопка «Новий проєкт» відкриває модалку через data-action="open:project" — скидаємо режим редагування
-  root.querySelector('[data-action="open:project"]')?.addEventListener('click', () => { editId = null; });
+  root.querySelector('[data-action="open:project"]')?.addEventListener('click', () => {
+    editId = null;
+    const del = document.querySelector('[data-modal="project"] [data-action="project-delete"]');
+    if (del) del.hidden = true;
+  });
 
   onSubmit('project', async (d, form) => {
     const row = {

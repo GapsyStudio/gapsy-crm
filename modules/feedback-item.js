@@ -8,7 +8,8 @@
  *  - позначки на скрінах: у модалці image — [data-mark-stage] (обгортка картинки), усередині data-list="stage-marks"
  *    з шаблоном піна (a[data-template] > [data-field="n"]), підказка [data-mark-hint], блок [data-mark-form] з формою data-form="mark"
  *    (textarea note) і дією mark-cancel; на сторінці список data-list="marks" (поля n, note, author, file) з діями
- *    mark-open, mark-toggle (+ [data-mark-check] з is-done), mark-delete. Лічильник [data-field="marks"] на мініатюрі. */
+ *    mark-open, mark-toggle (+ [data-mark-check] з is-done), mark-delete. Лічильник [data-field="marks"] на мініатюрі.
+ * v0.11: shot-delete у модалці image, comment-delete у рядку коментаря (свій або PM/admin); при видаленні правки скріни прибираються зі Storage. */
 CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, toast, action, signedUrls, time, date, name, crumbs, param, can, badge, due, PRIORITY, FEEDBACK_STATUS }) => {
   const id = param('id');
   const $ = (s) => root.querySelector(s);
@@ -96,7 +97,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   }));
 
   // ---------- скріни ----------
-  const { data: files } = await sb.from('feedback_files').select('id, path').eq('feedback_id', id).order('created_at');
+  const { data: files } = await sb.from('feedback_files').select('id, path, created_by').eq('feedback_id', id).order('created_at');
   const urls = await signedUrls((files || []).map((x) => x.path));
   const shots = (files || []).map((x, i) => ({ ...x, url: urls[x.path] || '', n: i + 1 }));
   let marks = [];
@@ -180,6 +181,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     const m = modal.open('image');
     const img = m?.querySelector('[data-lightbox-img]');
     if (img) { img.removeAttribute('srcset'); img.src = shot.url; }
+    m?.querySelector('[data-action="shot-delete"]')?.toggleAttribute('hidden', !(shot.created_by === user.id || can('pm,admin')));
     drawStage();
     if (focusMark) {
       const pin = stage?.querySelector(`[data-list="stage-marks"] > [data-id="${focusMark}"]`);
@@ -187,6 +189,22 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       setTimeout(() => pin?.classList.remove('is-active'), 1600);
     }
   }
+  // v0.11: видалити скрін (кнопка data-action="shot-delete" у модалці image; автор скріна або PM/admin)
+  action('shot-delete', async () => {
+    const shot = shots.find((x) => x.id === openFile);
+    if (!shot || !confirm('Видалити цей скрін разом із позначками на ньому?')) return;
+    const { error: err } = await sb.from('feedback_files').delete().eq('id', shot.id);
+    if (err) return CRM.fail(err);
+    CRM.removeFiles([shot.path]);
+    shots.splice(shots.indexOf(shot), 1);
+    shots.forEach((x, i) => { x.n = i + 1; });
+    marks = marks.filter((mk) => mk.file_id !== shot.id);
+    openFile = null;
+    modal.close();
+    drawShots();
+    loadMarks();
+    toast('Скрін видалено');
+  });
   action('open-image', (el) => openShot(el.dataset.fileId || el.closest('[data-file-id]')?.dataset.fileId));
   action('mark-open', (el) => {
     const m = marks.find((x) => x.id === el.closest('[data-id]')?.dataset.id);
@@ -258,10 +276,13 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   // ---------- коментарі ----------
   async function loadComments() {
     const { data, error: err } = await sb.from('feedback_comments')
-      .select('id, body, created_at, author:profiles!feedback_comments_author_id_fkey(full_name, email, avatar_url)')
+      .select('id, body, created_at, author_id, author:profiles!feedback_comments_author_id_fkey(full_name, email, avatar_url)')
       .eq('feedback_id', id).order('created_at');
     if (err) return CRM.fail(err);
-    render('comments', data.map((c) => ({ ...c, author: name(c.author), time: time(c.created_at), avatar: c.author?.avatar_url })));
+    render('comments', data.map((c) => ({ ...c, author: name(c.author), time: time(c.created_at), avatar: c.author?.avatar_url })), (el, c) => {
+      el.dataset.id = c.id;
+      el.querySelector('[data-action="comment-delete"]')?.toggleAttribute('hidden', !(c.author_id === user.id || can('pm,admin')));
+    });
   }
   onSubmit('comment', async (d, form) => {
     const body = d.body.trim();
@@ -272,13 +293,20 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     loadComments();
   });
   loadComments();
+  action('comment-delete', async (el) => {
+    const cid = el.closest('[data-id]')?.dataset.id;
+    if (!cid || !confirm('Видалити коментар?')) return;
+    const { error: err } = await sb.from('feedback_comments').delete().eq('id', cid);
+    if (err) return CRM.fail(err);
+    loadComments();
+  });
 
   // ---------- видалення ----------
   action('feedback-delete', async () => {
     if (!confirm('Видалити правку разом зі скрінами й коментарями?')) return;
     const { error: err } = await sb.from('feedback').delete().eq('id', id);
     if (err) return CRM.fail(err);
-    // simplified: файли в Storage лишаються; прибирання — окремою задачею, коли знадобиться
+    await CRM.removeFiles(shots.map((x) => x.path)); // v0.11: скріни теж прибираємо зі Storage
     location.replace('/feedback');
   });
 });

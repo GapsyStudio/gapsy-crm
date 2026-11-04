@@ -122,7 +122,7 @@
         const a = linkTpl.cloneNode(true);
         a.removeAttribute('data-template');
         a.setAttribute('data-rendered', '');
-        CRM.fill(a, { title: d.title, icon: d.icon || '📄' });
+        CRM.fill(a, { title: d.title, icon: d.icon || '' });
         a.href = `/doc?id=${d.id}`;
         if (d.id === activeId) { a.classList.add('is-active'); a.setAttribute('aria-current', 'page'); }
         into.insertBefore(a, before);
@@ -166,7 +166,7 @@
   CRM.name = (p) => (p && (p.full_name || p.email)) || '—';
 
   // ---------- правки: статус, пріоритет, дедлайн (v0.4) ----------
-  CRM.FEEDBACK_STATUS = { new: ['New', 'is-blue'], in_progress: ['In Progress', 'is-yellow'], resolved: ['Resolved', 'is-green'] };
+  CRM.FEEDBACK_STATUS = { new: ['Нова', 'is-blue'], in_progress: ['В роботі', 'is-yellow'], resolved: ['Закрита', 'is-green'] };
   CRM.PRIORITY = { urgent: ['Терміново', 'is-red'], high: ['Високий', 'is-yellow'], normal: ['Звичайний', ''], low: ['Низький', ''] };
   const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 

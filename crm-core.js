@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.14.0
+ * Gapsy CRM · crm-core.js v0.15.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -24,7 +24,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'reviews', 'leave-balance', 'leave', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'reviews', 'leave-balance', 'leave', 'onboarding', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'admin'];
   const TEXT = {
     invalid: 'Невірний email або пароль',
@@ -49,8 +49,10 @@
     module(name, init) { registry[name] = init; },
     can(rule) {
       const r = CRM.role;
-      if (!r || r === 'pending') return false;
+      if (!r) return false;
       const list = String(rule).split(',').map((s) => s.trim());
+      // v0.15: новачок (pending) має доступ лише туди, де правило явно містить 'pending' (онбординг, документи «Старту»)
+      if (r === 'pending') return list.includes('pending');
       return list.includes('auth') || list.includes(r) || (list.includes('staff') && STAFF.includes(r));
     },
     param: (k) => new URLSearchParams(location.search).get(k),
@@ -411,8 +413,8 @@
     if (rule === 'public') return true;
     if (rule === 'guest') return CRM.can('auth') ? (go(nextPath()), false) : true;
     if (!CRM.user) return go(`${cfg.loginPath}?next=${encodeURIComponent(location.pathname + location.search)}`), false;
-    if (!CRM.can('auth')) return go(cfg.pendingPath), false;
-    if (!CRM.can(rule)) return go(cfg.homePath), false;
+    if (!CRM.can('auth') && !CRM.can(rule)) return go(cfg.pendingPath), false;
+    if (!CRM.can(rule)) return go(CRM.role === 'pending' ? cfg.pendingPath : cfg.homePath), false;
     return true;
   }
 
@@ -440,7 +442,7 @@
   // Webflow ставить у нові форми англійські заглушки («Submit», «Please wait...», «Example text»).
   // Замінюємо їх тут, щоб не правити кожну форму в Designer. Свої тексти з Designer не чіпаємо.
   const SUBMIT = { pin: 'Закріпити', project: 'Створити проєкт', 'feedback-new': 'Створити правку', comment: 'Надіслати',
-    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', holiday: 'Додати', 'showcase-cat': 'Додати', user: 'Зберегти', profile: 'Зберегти', 'ref-new': 'Додати',
+    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', holiday: 'Додати', 'showcase-cat': 'Додати', 'quiz-q': 'Зберегти', user: 'Зберегти', profile: 'Зберегти', 'ref-new': 'Додати',
     review: 'Надіслати на погодження', 'access-request': 'Попросити доступ' };
   const PLACEHOLDER = {
     title: 'Назва', name: 'Назва', client: 'Клієнт', summary: 'Кілька речень: що за проєкт і для кого',
@@ -449,7 +451,7 @@
     drive_url: 'https://drive.google.com/…', source_url: 'https://', description: 'Що саме, де і як має бути',
     code: 'Встав код', foundry: 'Напр. Pangram Pangram', pageviews_limit: 'Напр. 10000', notes: 'Нотатки',
     comment: 'Коментар (необовʼязково)', clickup_email: 'Лише якщо в ClickUp інша пошта', leave_vacation_hours: 'Порожньо = з ClickUp',
-    leave_sick_hours: 'Порожньо = з ClickUp', label: 'Назва категорії', hours: '8', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
+    leave_sick_hours: 'Порожньо = з ClickUp', label: 'Назва категорії', question: 'Текст питання', options: 'Перший рядок — правильна відповідь, далі інші варіанти', explanation: 'Що пояснити після помилки (необовʼязково)', hours: '8', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
     full_name: 'Імʼя та прізвище', reason: 'Навіщо потрібен доступ (необовʼязково)', price: 'Напр. 15', q: 'Пошук…', tags: 'Напр. hero, scroll, typography', note: 'Що саме сподобалось',
   };
   function localizeForms() {
@@ -475,6 +477,11 @@
   function bindUI() {
     localizeForms();
     $$('[data-crm-role]').forEach((el) => { if (!CRM.can(el.dataset.crmRole)) el.remove(); });
+    // v0.15: новачку в меню лишаємо тільки дозволене (Онбординг) — інші пункти без data-crm-role все одно перекинуть на онбординг
+    if (CRM.role === 'pending') {
+      $$('.app_nav [data-nav]:not([data-crm-role])').forEach((el) => el.remove());
+      $$('.app_nav-group').forEach((g) => { g.hidden = true; });
+    }
     CRM.bindUser();
     // активний пункт меню
     const path = location.pathname.replace(/\/$/, '') || '/';

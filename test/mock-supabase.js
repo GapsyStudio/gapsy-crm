@@ -59,6 +59,14 @@ FIX.showcase_categories = [
   { slug: 'site', label: 'Сайт', color: 'is-blue', sort: 10 }, { slug: 'figma', label: 'Figma', color: 'is-yellow', sort: 20 },
   { slug: 'saas', label: 'SaaS', color: 'is-blue', sort: 50 }, { slug: 'web3', label: 'Web3', color: 'is-red', sort: 90 },
 ];
+FIX.quiz_questions = [
+  { id: 'q1', track: 'crm', question: 'Що робить ⌘K?', options: ['Копіює', 'Пошук і перехід', 'Тема'], doc_id: '3a0226a1-0275-5881-b848-96df46008c26', sort: 10, active: true },
+  { id: 'q2', track: 'crm', question: 'Де правки?', options: ['Правки', 'Slack'], doc_id: '3a0226a1-0275-5881-b848-96df46008c26', sort: 20, active: true },
+  { id: 'q3', track: 'designer', question: 'Пошта?', options: ['Особиста', 'Робоча'], doc_id: '62c1a9e7-417f-5a60-be78-95841a7dfc23', sort: 10, active: true },
+];
+FIX.quiz_attempts = [];
+FIX.role_requests = [];
+FIX.docs = (FIX.docs || []).concat([{ id: 'dcrm', title: 'Як користуватися Gapsy CRM', icon: '🧭' }, { id: 'ddes', title: 'Onboarding for Designer', icon: '' }]);
 FIX.company_holidays = [{ day: D(20), title: 'Тестове свято' }];
 FIX.leave_balances = [{ user_id: 'u2', vacation_task_id: 'cu123', sick_task_id: 'cu124' }];
 FIX.leave_requests = [
@@ -102,7 +110,11 @@ window.supabase = { createClient: () => ({
   },
   from: builder,
   functions: { invoke: async (name, opts) => { window.__calls.push(['fn', name, opts?.body]); return { data: { synced_at: new Date().toISOString(), cached: false }, error: null }; } },
-  rpc: async (name, args) => { window.__calls.push(['rpc', name, args]); if (name === 'leave_summary') return { data: FIX.leave_summary || [], error: null }; if (name === 'access_reveal') return { data: [{ login: 'studio@gapsy.studio', password: 'S3cret!', extra: null }], error: null }; return { data: name === 'search_all' ? [{ kind: 'feedback', id: 'f1', title: 'Кнопка в хедері', url: '/feedback-item?id=f1' }] : null, error: null }; },
+  rpc: async (name, args) => { window.__calls.push(['rpc', name, args]); if (name === 'leave_summary') return { data: FIX.leave_summary || [], error: null };
+    if (name === 'quiz_submit') { const ok = args.t === 'crm' ? (args.answers.q1 === 1 && args.answers.q2 === 0) : args.answers.q3 === 1; const r = { score: ok ? 2 : 1, total: 2, passed: ok, mistakes: ok ? [] : [{ id: 'q1', question: 'Що робить ⌘K?', explanation: 'Це пошук', doc_id: '3a0226a1-0275-5881-b848-96df46008c26' }] }; FIX.quiz_attempts.unshift({ track: args.t, score: r.score, total: 2, passed: ok, created_at: new Date().toISOString() }); return { data: r, error: null }; }
+    if (name === 'role_request_create') { FIX.role_requests.unshift({ id: 'rr1', role: args.target, status: 'pending', created_at: new Date().toISOString() }); return { data: 'rr1', error: null }; }
+    if (name === 'role_requests_admin') return { data: [{ id: 'rr9', user_id: 'u5', full_name: 'Новачок Тест', email: 'n@x', role: 'designer', from_role: 'pending', crm_score: '10/10', role_score: '11/12', status: 'pending', created_at: new Date().toISOString() }], error: null };
+    if (name === 'quiz_admin_list') return { data: FIX.quiz_questions.filter((q) => !args?.t || q.track === args.t).map((q) => ({ ...q, correct: 0, explanation: null })), error: null }; if (name === 'access_reveal') return { data: [{ login: 'studio@gapsy.studio', password: 'S3cret!', extra: null }], error: null }; return { data: name === 'search_all' ? [{ kind: 'feedback', id: 'f1', title: 'Кнопка в хедері', url: '/feedback-item?id=f1' }] : null, error: null }; },
   storage: { from: () => ({
     createSignedUrls: async (paths) => ({ data: paths.map((p) => ({ path: p, signedUrl: 'data:image/png;base64,iVBORw0KGgo=' })), error: null }),
     upload: async () => ({ error: null }), remove: async (paths) => { window.__calls.push(['storage-remove', 'media', paths]); return { error: null }; }, getPublicUrl: (p) => ({ data: { publicUrl: 'https://cdn/' + p } }),

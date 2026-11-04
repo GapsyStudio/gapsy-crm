@@ -37,21 +37,27 @@ CRM.module('showcase', async (root, { sb, render, onSubmit, modal, toast, badge,
     });
   }
 
-  // таби: «Усі» + категорії, де є роботи (активна лишається, навіть якщо порожня)
+  // таби: «Усі» + усі категорії (v0.15: і порожні теж; ряд гортається горизонтально — клас .tabs.is-scroll)
   function drawTabs() {
     const g = root.querySelector('[data-tabs="category"]');
     if (!g) return;
     const all = g.querySelector('[data-tab="all"]') || g.querySelector('[data-tab]');
     if (!all) return;
+    g.classList.add('is-scroll');
     g.querySelectorAll('[data-tab]').forEach((t) => { if (t !== all) t.remove(); });
-    const used = new Set(items.map((i) => i.category));
-    cats.filter((c) => used.has(c.slug) || c.slug === tab).forEach((c) => {
+    const count = {};
+    items.forEach((i) => { count[i.category] = (count[i.category] || 0) + 1; });
+    const setCount = (t, n) => { const c = t.querySelector('[data-tab-count]'); if (c) { c.textContent = n; c.hidden = false; } };
+    setCount(all, items.length);
+    cats.forEach((c) => {
       const t = all.cloneNode(true);
       t.dataset.tab = c.slug;
       t.classList.remove('is-active', 'w--current');
+      t.classList.toggle('is-empty', !count[c.slug]);
       t.setAttribute('aria-selected', 'false');
       const label = t.querySelector('[data-tab-label]') || t;
       label.textContent = c.label;
+      setCount(t, count[c.slug] || 0);
       g.appendChild(t);
     });
     if (!g.querySelector(`[data-tab="${CSS.escape(tab)}"]`)) tab = 'all';

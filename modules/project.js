@@ -1,6 +1,7 @@
 /* Gapsy CRM · modules/project.js — Картка проєкту (/project?id=<id>)
  * Розмітка: [data-element="project"]
- *   шапка:      [data-item="name|client|status|summary|prefix"]
+ *   шапка:      [data-item="name|client|status|summary|prefix"]; v0.10: [data-item="stage"] (бейдж), [data-item="dates"] (етап до … · запуск …),
+ *               [data-item="risk"] (бейдж, ховається без ризику); у формі project-edit — stage (select data-options="stage"), stage_due, deadline
  *   списки:     data-list="project-stack | project-links | project-team | project-notes |
  *               project-feedback | project-showcase | project-snippets | handoff-items"
  *   хендофф:    [data-handoff] > форма data-form="handoff", кнопки [data-handoff-btn="save|submit|accept|return"],
@@ -9,12 +10,12 @@
  *   дії:        project-edit, handoff-check, handoff-submit, handoff-accept, handoff-return,
  *               note-pin, note-delete, member-remove
  * Права: редагувати проєкт і команду — PM/admin (RLS). Нотатки й хендофф — уся команда. */
-CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, toast, action, badge, time, name, crumbs, param, can }) => {
+CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, toast, action, badge, time, date, name, crumbs, param, can }) => {
   const id = param('id');
   if (!id) return location.replace('/projects');
 
   const STATUS = { active: ['Активний', 'is-blue'], paused: ['Пауза', 'is-yellow'], done: ['Завершений', 'is-green'] };
-  const FB_STATUS = { new: ['New', 'is-blue'], in_progress: ['In Progress', 'is-yellow'], resolved: ['Resolved', 'is-green'] };
+  const FB_STATUS = CRM.FEEDBACK_STATUS;
   const HO_STATUS = {
     draft: ['Чернетка', ''], submitted: ['Передано', 'is-blue'],
     accepted: ['Прийнято', 'is-green'], returned: ['Повернуто', 'is-red'],
@@ -67,6 +68,12 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     set('summary', data.summary || 'Опису ще немає.');
     set('prefix', data.prefix || '—');
     badge($('[data-item="status"]'), data.status, STATUS);
+    badge($('[data-item="stage"]'), data.stage || 'design', CRM.STAGE);
+    const short = (d) => date(d, { day: 'numeric', month: 'short' });
+    set('dates', [data.stage_due && `Етап до ${short(data.stage_due)}`, data.deadline && `Запуск ${short(data.deadline)}`].filter(Boolean).join(' · ') || 'Дати не задані');
+    const riskEl = $('[data-item="risk"]');
+    const risk = CRM.projectRisk(data);
+    if (riskEl) { riskEl.hidden = !risk; if (risk) badge(riskEl, 'r', { r: [risk.text, risk.combo] }); }
     crumbs(`Проєкти / ${data.name}`);
     document.title = `${data.name} | Gapsy CRM`;
 
@@ -81,8 +88,10 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     const m = modal.open('project-edit');
     const form = m?.querySelector('[data-form="project-edit"]');
     if (!form || !project) return;
-    ['name', 'client', 'status', 'prefix', 'summary', ...LINKS.map(([k]) => k)].forEach((k) => {
-      if (form.elements[k]) form.elements[k].value = project[k] || '';
+    CRM.fillSelects(m).then(() => {
+      ['name', 'client', 'status', 'stage', 'stage_due', 'deadline', 'prefix', 'summary', ...LINKS.map(([k]) => k)].forEach((k) => {
+        if (form.elements[k]) form.elements[k].value = project[k] || '';
+      });
     });
     if (form.elements.stack) form.elements.stack.value = (project.stack || []).join(', ');
   });
@@ -92,6 +101,9 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
       name: d.name.trim(), client: orNull(d.client), status: d.status,
       prefix: orNull(d.prefix), summary: orNull(d.summary), stack: list(d.stack),
     };
+    if ('stage' in d) row.stage = d.stage || 'design';
+    if ('stage_due' in d) row.stage_due = d.stage_due || null;
+    if ('deadline' in d) row.deadline = d.deadline || null;
     LINKS.forEach(([k]) => { row[k] = orNull(d[k]); });
     const { error } = await sb.from('projects').update(row).eq('id', id);
     if (error) throw error;

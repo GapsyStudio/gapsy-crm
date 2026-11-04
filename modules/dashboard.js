@@ -1,9 +1,13 @@
 /* Gapsy CRM · modules/dashboard.js — Головна (/app)
  * Розмітка: [data-element="dashboard"], [data-today], списки my-feedback / recent-docs / pins, форма data-form="pin".
- * Баланс відпусток підключиться разом із модулем leave. */
-CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge, crumbs, time }) => {
+ * Баланс відпусток підключиться разом із модулем leave.
+ * v0.10 «Пульс агенції» (лише PM/admin, обгортка [data-pulse] з data-crm-role="pm,admin"):
+ *   лічильники [data-pulse-count="risk|overdue|handoffs|active"],
+ *   data-list="pulse-risk" — проєкти під ризиком (поля name, stage, due; бейдж risk), посилання на картку;
+ *   data-list="workload" — люди (поля name, role, projects, open, overdue), найзавантаженіші вгорі. */
+CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge, crumbs, time, date, name, can }) => {
   crumbs('Головна');
-  const STATUS = { new: ['New', 'is-blue'], in_progress: ['In Progress', 'is-yellow'], resolved: ['Resolved', 'is-green'] };
+  const STATUS = CRM.FEEDBACK_STATUS;
 
   const today = root.querySelector('[data-today]');
   if (today) {
@@ -62,6 +66,48 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     loadPins();
   });
 
+  // ---------- Пульс агенції (PM/admin) ----------
+  const ROLE = { designer: 'Дизайн', developer: 'Розробка', pm: 'PM', admin: 'Адмін' };
+  async function loadPulse() {
+    if (!can('pm,admin') || !root.querySelector('[data-pulse]')) return;
+    const [pr, fb, ho, mem, ppl] = await Promise.all([
+      sb.from('projects').select('id, name, status, stage, stage_due, deadline').eq('status', 'active'),
+      sb.from('feedback').select('id, assignee_id, due_date').neq('status', 'resolved'),
+      sb.from('handoffs').select('id, status, submitted_at').eq('status', 'submitted'),
+      sb.from('project_members').select('user_id, project_id'),
+      sb.from('profiles').select('id, full_name, email, role').in('role', ['designer', 'developer', 'pm', 'admin']),
+    ]);
+    const err = [pr, fb, ho, mem, ppl].find((r) => r.error);
+    if (err) return console.error(err.error);
+    const todayStr = new Date().toLocaleDateString('sv'); // YYYY-MM-DD за місцевим часом
+    const active = pr.data;
+    const risky = active.map((p) => ({ ...p, risk: CRM.projectRisk(p) })).filter((p) => p.risk).sort((a, b) => a.risk.days - b.risk.days);
+    const overdue = fb.data.filter((f) => f.due_date && f.due_date < todayStr);
+    const stuck = ho.data.filter((h) => h.submitted_at && Date.now() - new Date(h.submitted_at) > 2 * 864e5);
+    const counts = { risk: risky.length, overdue: overdue.length, handoffs: stuck.length, active: active.length };
+    root.querySelectorAll('[data-pulse-count]').forEach((el) => { el.textContent = counts[el.dataset.pulseCount] ?? '0'; });
+
+    const short = (d) => date(d, { day: 'numeric', month: 'short' });
+    render('pulse-risk', risky.slice(0, 6).map((p) => ({ ...p, due: short(p.risk.date) })), (el, p) => {
+      el.href = `/project?id=${p.id}`;
+      badge(el.querySelector('[data-field="stage"]'), p.stage || 'design', CRM.STAGE);
+      badge(el.querySelector('[data-field="risk"]'), 'r', { r: [p.risk.text, p.risk.combo] });
+    });
+
+    const activeIds = new Set(active.map((p) => p.id));
+    const rows = ppl.data.map((u) => ({
+      id: u.id, name: name(u), role: ROLE[u.role] || u.role,
+      projects: mem.data.filter((m) => m.user_id === u.id && activeIds.has(m.project_id)).length,
+      open: fb.data.filter((f) => f.assignee_id === u.id).length,
+      overdue: overdue.filter((f) => f.assignee_id === u.id).length,
+    })).filter((u) => u.role !== 'Адмін' || u.projects || u.open)
+      .sort((a, b) => b.overdue - a.overdue || b.open + b.projects - (a.open + a.projects));
+    render('workload', rows, (el, u) => {
+      el.querySelector('[data-field="overdue"]')?.toggleAttribute('hidden', !u.overdue);
+    });
+  }
+
   loadFeedback();
   loadPins();
+  loadPulse();
 });

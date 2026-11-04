@@ -23,7 +23,7 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
   const kidsOf = (pid) => all.filter((d) => d.parent_id === pid).sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
   const countAll = (pid) => kidsOf(pid).reduce((n, k) => n + 1 + countAll(k.id), 0);
   const pages = (n) => (n % 10 === 1 && n % 100 !== 11 ? `${n} сторінка` : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? `${n} сторінки` : `${n} сторінок`);
-  render('docs-sections', kidsOf(null).map((d) => ({ ...d, icon: d.icon || '📄' })), (card, d) => {
+  render('docs-sections', kidsOf(null).map((d) => ({ ...d, icon: d.icon || '' })), (card, d) => {
     card.dataset.docId = d.id; // для «+ Сторінка» в картці групи
     const head = card.querySelector('[data-section-link]');
     if (head) head.href = `/doc?id=${d.id}`;
@@ -35,7 +35,7 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
       kids.slice(0, SHOW).forEach((k) => {
         const row = tpl.cloneNode(true);
         const n = countAll(k.id);
-        CRM.fill(row, { title: k.title, icon: k.icon || '📄', meta: n ? pages(n) : '' });
+        CRM.fill(row, { title: k.title, icon: k.icon || '', meta: n ? pages(n) : '' });
         row.href = `/doc?id=${k.id}`;
         box.appendChild(row);
       });
@@ -55,7 +55,7 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
     if (title) title.textContent = 'Нещодавно змінені';
     const rows = all.filter((d) => !String(d.notion_id || '').startsWith('group:')) // групи — не документи
       .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 8);
-    render('docs-recent', rows.map((d) => ({ ...d, icon: d.icon || '📄', meta: time(d.updated_at) })),
+    render('docs-recent', rows.map((d) => ({ ...d, icon: d.icon || '', meta: time(d.updated_at) })),
       (el, d) => { el.href = `/doc?id=${d.id}`; });
   };
   recent();
@@ -76,7 +76,7 @@ CRM.module('docs', async (root, { sb, render, onSubmit, action, toast, time, cru
       if (title) title.textContent = `Знайдено: ${data.length}`;
       const lower = q.toLowerCase();
       data.sort((a, b) => b.title.toLowerCase().includes(lower) - a.title.toLowerCase().includes(lower));
-      render('docs-recent', data.map((d) => ({ ...d, icon: d.icon || '📄', meta: time(d.updated_at) })),
+      render('docs-recent', data.map((d) => ({ ...d, icon: d.icon || '', meta: time(d.updated_at) })),
         (el, d) => { el.href = `/doc?id=${d.id}`; });
     }, 250);
   });

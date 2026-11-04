@@ -31,7 +31,7 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     .then(({ data, error }) => {
       if (error) return console.error(error);
       data = data.filter((d) => !String(d.notion_id || '').startsWith('group:')).slice(0, 5); // групи — не документи
-      render('recent-docs', data.map((d) => ({ ...d, icon: d.icon || '📄', meta: time(d.updated_at) })),
+      render('recent-docs', data.map((d) => ({ ...d, icon: d.icon || '', meta: time(d.updated_at) })),
         (el, d) => { el.href = `/doc?id=${d.id}`; });
     });
 

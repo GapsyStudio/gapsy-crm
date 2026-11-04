@@ -43,7 +43,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     const head = $('[data-doc-group]');
     if (head) head.hidden = !group;
     if (head && group) {
-      CRM.fill(head, { icon: group.icon || '📄', title: group.title });
+      CRM.fill(head, { icon: group.icon || '', title: group.title });
       head.href = `/doc?id=${group.id}`;
       head.classList.toggle('is-active', group.id === id);
     }
@@ -119,7 +119,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     if (lead.some((n) => n.nodeType !== 3) || !LEAD.test(lead.map((n) => n.textContent).join(''))) return null;
     const href = a.getAttribute('href');
     const docId = (href.match(/^\/doc\?id=([0-9a-f-]{36})/) || [])[1];
-    const icon = lead.map((n) => n.textContent).join('').trim() || (docId ? byId[docId]?.icon || '📄' : '🔗');
+    const icon = lead.map((n) => n.textContent).join('').trim() || (docId ? byId[docId]?.icon || '' : '🔗');
     const row = el('a', null, 'doc_link');
     row.href = href;
     if (!href.startsWith('/')) { row.target = '_blank'; row.rel = 'noopener'; }
@@ -128,6 +128,47 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     row.lastChild.textContent = (docId && byId[docId]?.title) || a.textContent.trim() || href;
     if (!href.startsWith('/')) row.lastChild.textContent += ' ↗';
     return row;
+  }
+
+  // текст клітинки без HTML
+  const text = (html) => { const t = document.createElement('template'); t.innerHTML = String(html || ''); return t.content.textContent.replace(/\s+/g, ' ').trim(); };
+
+  // Таблиця людей (є колонки E-mail і телефон/посада) → картки за відділами.
+  // Рядок, де заповнена лише перша клітинка, — назва відділу; порожні рядки пропускаємо.
+  function peopleCards(rows) {
+    const head = (rows[0] || []).map((h) => text(h).toLowerCase());
+    const col = (re) => head.findIndex((h) => re.test(h));
+    const iEmail = col(/e-?mail|пошта/);
+    const iPhone = col(/^cell|phone|телефон|моб/);
+    const iRole = col(/position|посада|role|роль/);
+    if (iEmail < 1 || (iPhone < 1 && iRole < 1)) return null;
+    const box = el('div', null, 'doc_people');
+    let grid = null;
+    const group = (title) => {
+      if (title) box.appendChild(el('div', null, 'doc_people-group')).textContent = title;
+      grid = box.appendChild(el('div', null, 'doc_people-grid'));
+    };
+    rows.slice(1).forEach((row) => {
+      const cells = row.map(text);
+      if (!cells.some(Boolean)) return;
+      if (cells[0] && cells.slice(1).every((c) => !c)) return group(cells[0]);
+      if (!grid) group('');
+      const [name, email, phone, role] = [cells[0], cells[iEmail], iPhone > 0 ? cells[iPhone] : '', iRole > 0 ? cells[iRole] : ''];
+      const card = grid.appendChild(el('div', null, 'doc_person'));
+      const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+      card.appendChild(el('span', null, 'doc_person-avatar')).textContent = initials || '·';
+      const info = card.appendChild(el('div', null, 'doc_person-info'));
+      info.appendChild(el('div', null, 'doc_person-name')).textContent = name || 'Без імені';
+      if (role) info.appendChild(el('div', null, 'doc_person-role')).textContent = role.split(/\s*\|\s*/).filter(Boolean).join(' · ');
+      const contact = (href, label) => {
+        const a = info.appendChild(el('a', null, 'doc_person-contact'));
+        a.href = href;
+        a.textContent = label;
+      };
+      if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) contact(`mailto:${email}`, email);
+      if (phone && /\d{6,}/.test(phone.replace(/\D/g, ''))) contact(`tel:${phone.replace(/[^\d+]/g, '')}`, phone);
+    });
+    return box.querySelector('.doc_person') ? box : null;
   }
 
   async function renderBlocks(blocks) {
@@ -161,9 +202,12 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
         case 'code': { const pre = el('pre'); pre.appendChild(el('code')).textContent = d.code || ''; frag.appendChild(pre); break; }
         case 'delimiter': frag.appendChild(el('hr')); break;
         case 'table': {
+          const people = d.withHeadings && peopleCards(d.content || []);
+          if (people) { frag.appendChild(people); break; }
           const wrap = el('div', null, 'doc_table');
           const t = wrap.appendChild(el('table'));
           (d.content || []).forEach((row, i) => {
+            if (i > 0 && row.every((cell) => !text(cell))) return; // порожні рядки з Notion не показуємо
             const tr = (i === 0 && d.withHeadings ? t.createTHead() : t.tBodies[0] || t.createTBody()).insertRow();
             row.forEach((cell) => tr.appendChild(el(i === 0 && d.withHeadings ? 'th' : 'td', clean(cell, urls))));
           });
@@ -203,7 +247,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
   // =================================================================
   function drawHead() {
     const icon = $('[data-doc="icon"]');
-    if (icon) icon.textContent = doc.icon || '📄';
+    if (icon) icon.textContent = doc.icon || '';
     titleEl.textContent = doc.title;
     document.title = `${doc.title} | Gapsy CRM`;
     CRM.rememberPage?.();
@@ -217,7 +261,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     const linked = new Set([...JSON.stringify(doc.content || {}).matchAll(/\/doc\?id=([0-9a-f-]{36})/g)].map((m) => m[1]));
     const kids = all.filter((d) => d.parent_id === id && !linked.has(d.id))
       .sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
-    render('doc-children', kids.map((d) => ({ ...d, icon: d.icon || '📄' })), (row, d) => { row.href = `/doc?id=${d.id}`; });
+    render('doc-children', kids.map((d) => ({ ...d, icon: d.icon || '' })), (row, d) => { row.href = `/doc?id=${d.id}`; });
     show($('[data-doc-children-section]'), kids.length > 0);
   }
   // «На цій сторінці»: заголовки h2/h3 отримують id, список — у data-list="doc-toc"
@@ -323,7 +367,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
   };
   setMode(false);
   iconEl?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); iconEl.blur(); } });
-  iconEl?.addEventListener('blur', () => { if (iconEl.isContentEditable) iconEl.textContent = firstEmoji(iconEl.textContent) || '📄'; });
+  iconEl?.addEventListener('blur', () => { if (iconEl.isContentEditable) iconEl.textContent = firstEmoji(iconEl.textContent) || ''; });
   const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
 
   async function startEdit() {
@@ -377,7 +421,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     editor = null;
     setMode(false);
     titleEl.textContent = doc.title;
-    if (iconEl) iconEl.textContent = doc.icon || '📄';
+    if (iconEl) iconEl.textContent = doc.icon || '';
     await renderBlocks(doc.content?.blocks || []);
     drawToc();
   }
@@ -391,8 +435,7 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
     // signed URL тимчасові: у базі лишаємо лише path
     out.blocks.forEach((b) => { if (b.type === 'image' && b.data.file?.path) delete b.data.file.url; });
     const title = titleEl.textContent.trim().slice(0, 200) || 'Без назви';
-    let icon = firstEmoji(iconEl?.textContent);
-    if (icon === '📄' && !doc.icon) icon = null; // 📄 — це просто іконка за замовчуванням
+    const icon = firstEmoji(iconEl?.textContent); // без емодзі — без іконки, як у Notion
     const { data, error } = await sb.from('docs').update({ title, icon, content: out }).eq('id', id)
       .select('*, editor:profiles!docs_updated_by_fkey(full_name, email)').single();
     if (error) return CRM.fail(error);

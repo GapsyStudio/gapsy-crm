@@ -42,6 +42,13 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
     const title = m.querySelector('[data-user-title]');
     if (title) title.textContent = name(p);
     const f = m.querySelector('[data-form="user"]');
+    // v0.17: роль sales могло не бути в статичному списку select — додаємо після pm, якщо її нема
+    const roleSel = f.elements.role;
+    if (roleSel && !roleSel.querySelector('option[value="sales"]')) {
+      const o = new Option('sales', 'sales');
+      const pm = roleSel.querySelector('option[value="pm"]');
+      if (pm) pm.after(o); else roleSel.add(o);
+    }
     f.elements.role.value = p.role === 'pending' ? 'designer' : p.role;
     f.elements.clickup_task_id.value = p.clickup_task_id || '';
     if (f.elements.is_art_director) f.elements.is_art_director.checked = !!p.is_art_director;

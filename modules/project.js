@@ -342,7 +342,68 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
   }
 
   // =================================================================
+  // ЧЕКЛІСТ СТАРТУ (v0.17) — PM/admin додають і відмічають; команда бачить.
+  // Картка будується в JS і додається в root (.stack). Таблиця project_checklist, RLS: staff read / pm-admin write.
+  // =================================================================
+  function initChecklist() {
+    if (root.querySelector('[data-pchk]')) return;
+    const mk = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
+    const canWrite = can('pm,admin');
+    let DATA = [];
+    const card = mk('div', 'card pchk_card'); card.setAttribute('data-pchk', '');
+    const hd = mk('div', 'card_header'); const ttl = mk('div', 'card_title'); ttl.textContent = 'Чекліст старту'; hd.append(ttl);
+    const prog = mk('div', 'text-color-secondary'); prog.style.fontSize = '.8125rem'; hd.append(prog); card.append(hd);
+    const box = mk('div', 'pchk_list'); card.append(box);
+    if (canWrite) {
+      const form = mk('form', 'pchk_form');
+      const inp = mk('input', 'form-input'); inp.type = 'text'; inp.placeholder = 'Новий пункт (напр. Бриф отримано)'; inp.required = true;
+      const btn = mk('button', 'button is-small'); btn.type = 'submit'; btn.textContent = 'Додати';
+      form.append(inp, btn); card.append(form);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault(); const label = inp.value.trim(); if (!label) return;
+        const sort = DATA.length ? Math.max(...DATA.map((x) => x.sort)) + 10 : 0;
+        const { data, error } = await sb.from('project_checklist').insert({ project_id: id, label, sort }).select().single();
+        if (error) return CRM.fail(error);
+        DATA.push(data); inp.value = ''; draw();
+      });
+    }
+    root.append(card);
+    function draw() {
+      box.replaceChildren();
+      const done = DATA.filter((x) => x.done).length;
+      prog.textContent = DATA.length ? `${done} / ${DATA.length}` : 'Порожньо';
+      DATA.forEach((it) => {
+        const row = mk('label', 'pchk_row');
+        const cb = mk('input'); cb.type = 'checkbox'; cb.checked = !!it.done; cb.disabled = !canWrite;
+        const sp = mk('span', 'pchk_label'); sp.textContent = it.label; sp.style.textDecoration = it.done ? 'line-through' : '';
+        cb.addEventListener('change', async () => {
+          const { error } = await sb.from('project_checklist').update({ done: cb.checked }).eq('id', it.id);
+          if (error) { cb.checked = !cb.checked; return CRM.fail(error); }
+          it.done = cb.checked; draw();
+        });
+        row.append(cb, sp);
+        if (canWrite) {
+          const del = mk('button', 'button is-text is-small pchk_del'); del.type = 'button'; del.textContent = '×'; del.title = 'Прибрати';
+          del.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            const { error } = await sb.from('project_checklist').delete().eq('id', it.id);
+            if (error) return CRM.fail(error);
+            DATA = DATA.filter((x) => x.id !== it.id); draw();
+          });
+          row.append(del);
+        }
+        box.append(row);
+      });
+    }
+    sb.from('project_checklist').select('id,label,done,sort').eq('project_id', id).order('sort').then(({ data, error }) => {
+      if (error) return CRM.fail(error);
+      DATA = data; draw();
+    });
+  }
+
+  // =================================================================
   await loadProject();
   await Promise.all([loadTeam(), loadNotes(), loadHandoff(), loadRelated()]);
+  initChecklist();
   if (location.hash === '#handoff') $('[data-handoff]')?.scrollIntoView({ block: 'start' });
 });

@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.15.2
+ * Gapsy CRM · crm-core.js v0.16.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -9,7 +9,7 @@
  *  - оболонка: активний пункт меню (data-nav), хлібні крихти (data-crm-crumbs),
  *    модалки (data-modal + data-action="open:<key>" / "close"), таби (data-tabs/data-tab),
  *    тема (data-action="toggle-theme", data-theme-switch), toast-и, пошук Cmd+K,
- *    сповіщення з realtime;
+ *    сповіщення з realtime; v0.16 закріплене (сторінки CRM і посилання) + зірочка «Закріпити сторінку»;
  *  - хелпери для модулів: CRM.render, CRM.fill, CRM.badge, CRM.onSubmit, CRM.action,
  *    CRM.dropzone, CRM.upload, CRM.signedUrls, CRM.options, CRM.time.
  *
@@ -682,12 +682,16 @@
     const match = (r) => !low || r.title.toLowerCase().includes(low);
     const here = location.pathname + location.search;
     return [
+      ...(pinsCache || []).filter((r) => r.url !== here && match(r)).slice(0, low ? 3 : 6).map((r) => ({ ...r, type: 'Закріплене' })),
       ...recentPages().filter((r) => r.url !== here && match(r)).slice(0, low ? 3 : 5).map((r) => ({ ...r, type: 'Нещодавнє' })),
       ...navPages().filter(match).slice(0, low ? 3 : 12).map((r) => ({ ...r, type: 'Розділ' })),
     ];
   }
   function showQuick(q) {
-    const items = CRM.render('search', quickRows(q), (el, r) => { el.href = r.url; });
+    const items = CRM.render('search', quickRows(q), (el, r) => {
+      el.href = r.url;
+      if (/^https?:/i.test(r.url)) { el.target = '_blank'; el.rel = 'noopener'; } // закріплене зовнішнє посилання
+    });
     items[0]?.classList.add('is-active');
   }
   async function runSearch() {
@@ -703,6 +707,22 @@
     });
     items[0]?.classList.add('is-active');
   }
+  /** v0.16: пошук сторінок CRM для вибору (закріплене): q < 2 — розділи меню й нещодавнє, інакше search_all + розділи.
+   *  Повертає [{ title, url, type }]. */
+  CRM.searchPages = async (q) => {
+    q = String(q || '').trim();
+    const low = q.toLowerCase();
+    const match = (r) => !low || r.title.toLowerCase().includes(low);
+    const nav = navPages().filter(match).map((r) => ({ ...r, type: 'Розділ' }));
+    const recent = recentPages().filter(match).map((r) => ({ ...r, type: 'Нещодавнє' }));
+    if (q.length < 2) return [...nav, ...recent];
+    const { data, error } = await sb.rpc('search_all', { q });
+    if (error) { console.error('[CRM] search', error); return nav; }
+    const found = data.filter((r) => /^\//.test(r.url || '')).map((r) => ({ title: r.title, url: r.url, type: KIND[r.kind] || r.kind }));
+    const seen = new Set();
+    return [...found, ...nav, ...recent].filter((r) => !seen.has(r.url) && seen.add(r.url));
+  };
+
   function searchKeys(e) {
     const m = $('[data-modal="search"].is-open');
     if (!m) return;
@@ -719,6 +739,92 @@
       e.preventDefault();
       items[i].click();
     }
+  }
+
+  // ===================================================================
+  // v0.16 ЗАКРІПЛЕНЕ (швидкий доступ): будь-яка сторінка CRM або зовнішнє посилання.
+  // Таблиця pins (title, url): url — або шлях сайту (/project?id=…, /doc?id=…, /leave), або http(s)://…
+  // Зірочка у верхній панелі [data-action="pin-page"]: ядро саме додає її перед перемикачем теми
+  // (клас як у перемикача), стан — клас is-pinned + aria-pressed. Подія crm:pins — список змінився.
+  // ===================================================================
+  const PIN_KIND = [[/^\/project\?/, 'Проєкт'], [/^\/doc\?/, 'Документ'], [/^\/feedback-item\?/, 'Правка'], [/^\/snippet\?/, 'Сніпет'],
+    [/^\/fonts\?id=/, 'Шрифт'], [/^\/access\?id=/, 'Доступ'], [/^\/reviews\?id=/, 'Погодження']];
+  /** Підпис під закріпленим: тип сторінки CRM або домен зовнішнього посилання. */
+  CRM.pinLabel = (url) => {
+    if (/^\//.test(url)) return PIN_KIND.find(([re]) => re.test(url))?.[1] || 'Розділ CRM';
+    try { return new URL(url).host.replace(/^www\./, ''); } catch { return url; }
+  };
+  /** Нормалізує адресу: посилання на цей сайт → шлях (/project?id=…), зовнішнє — лише http(s). Інакше null. */
+  CRM.pinUrl = (u) => {
+    u = String(u || '').trim();
+    if (!u) return null;
+    try {
+      const x = new URL(u, location.origin);
+      if (x.origin === location.origin) return x.pathname + x.search + x.hash;
+      if (/^https?:$/.test(x.protocol) && /^https?:\/\//i.test(u)) return x.href;
+    } catch {}
+    return null;
+  };
+  let pinsCache = null;
+  const herePath = () => location.pathname + location.search;
+  const pageTitle = () => document.title.replace(/\s*\|\s*Gapsy CRM$/, '').trim() || $('[data-page-content] h1')?.textContent.trim() || 'Сторінка';
+  /** Мої закріплені (кеш; force — перечитати з бази). */
+  CRM.pins = async (force) => {
+    if (pinsCache && !force) return pinsCache;
+    const { data, error } = await sb.from('pins').select('id, title, url').order('sort').order('created_at');
+    if (error) { console.error('[CRM] pins', error); return pinsCache || []; }
+    pinsCache = data;
+    syncPinButton();
+    document.dispatchEvent(new CustomEvent('crm:pins', { detail: data }));
+    return data;
+  };
+  CRM.pin = async (title, url) => {
+    const u = CRM.pinUrl(url);
+    if (!u) throw new Error('Посилання має починатися з https:// або вести на сторінку CRM');
+    if ((await CRM.pins()).some((p) => p.url === u)) return CRM.toast('Уже в швидкому доступі');
+    const { error } = await sb.from('pins').insert({ title: String(title || '').trim().slice(0, 120) || u, url: u });
+    if (error) throw error;
+    await CRM.pins(true);
+    CRM.toast('Додано в швидкий доступ');
+  };
+  CRM.unpin = async (id) => {
+    const { error } = await sb.from('pins').delete().eq('id', id);
+    if (error) return CRM.fail(error);
+    await CRM.pins(true);
+    CRM.toast('Прибрано зі швидкого доступу');
+  };
+  function syncPinButton() {
+    const on = (pinsCache || []).some((p) => p.url === herePath());
+    $$('[data-action="pin-page"]').forEach((b) => {
+      const t = on ? 'Прибрати зі швидкого доступу' : 'Додати в швидкий доступ';
+      b.classList.toggle('is-pinned', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', t);
+      b.title = t;
+    });
+  }
+  async function togglePinPage() {
+    const p = (await CRM.pins()).find((x) => x.url === herePath());
+    if (p) return CRM.unpin(p.id);
+    try { await CRM.pin(pageTitle(), herePath()); } catch (err) { CRM.fail(err); }
+  }
+  const STAR = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z"/></svg>';
+  function addPinButton() {
+    if (['/app', '/login', '/pending', '/onboarding', '/'].includes(location.pathname)) return;
+    if (!$('[data-action="pin-page"]')) {
+      const theme = $('[data-action="toggle-theme"]');
+      if (!theme) return;
+      const b = document.createElement('a');
+      b.href = '#';
+      b.className = theme.className;
+      b.dataset.action = 'pin-page';
+      b.setAttribute('role', 'button');
+      b.innerHTML = STAR;
+      const size = theme.querySelector('svg')?.getAttribute('width');
+      if (size) b.querySelector('svg').setAttribute('width', size), b.querySelector('svg').setAttribute('height', size);
+      theme.before(b);
+    }
+    syncPinButton();
   }
 
   // ===================================================================
@@ -817,6 +923,7 @@
     if (a === 'toggle:notifications') { e.preventDefault(); return panel?.classList.toggle('is-open'); }
     if (a === 'notifications-read-all') { e.preventDefault(); return readNotifications(); }
     if (a === 'notifications-clear') { e.preventDefault(); return clearNotifications(); }
+    if (a === 'pin-page') { e.preventDefault(); return togglePinPage(); }
     if (a === 'toggle-nav') { e.preventDefault(); return setNav(!html.classList.contains('crm-nav-open')); }
     if (a === 'toggle-theme') {
       e.preventDefault();
@@ -869,6 +976,7 @@
       initTabPanels();
       html.classList.remove('crm-loading');
       if (CRM.can('auth') && $('[data-notif-panel]')) { loadNotifications(); watchNotifications(); }
+      if (CRM.can('staff')) { addPinButton(); CRM.pins(); } // v0.16 швидкий доступ
       loadModules();
       setTimeout(() => CRM.rememberPage(), 2000);
       document.dispatchEvent(new CustomEvent('crm:ready', { detail: CRM }));

@@ -41,31 +41,92 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
         (el, d) => { el.href = `/doc?id=${d.id}`; });
     });
 
-  // Закріплене
-  async function loadPins() {
-    const { data, error } = await sb.from('pins').select('id, title, url').order('sort').order('created_at');
-    if (error) return console.error(error);
-    render('pins', data.map((p) => ({ ...p, host: safeHost(p.url) })), (el, p) => {
+  // ---------- Швидкий доступ (v0.16) ----------
+  // Закріплене — сторінки CRM (проєкт, документ, правка, розділ…) або зовнішні посилання. Дані й кеш — у ядрі (CRM.pins).
+  // Картка: підпис = тип сторінки або домен; × у кутку прибирає (раніше — лише ПКМ).
+  function renderPins(data) {
+    render('pins', data.map((p) => ({ ...p, host: CRM.pinLabel(p.url) })), (el, p) => {
       el.href = p.url;
       el.dataset.id = p.id;
-      el.addEventListener('contextmenu', async (e) => {
-        // ПКМ по картці — відкріпити
-        e.preventDefault();
-        if (!confirm(`Відкріпити «${p.title}»?`)) return;
-        await sb.from('pins').delete().eq('id', p.id);
-        loadPins();
-      });
+      if (/^https?:/i.test(p.url)) { el.target = '_blank'; el.rel = 'noopener'; }
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'pin_remove';
+      x.textContent = '×';
+      x.setAttribute('aria-label', `Прибрати «${p.title}» зі швидкого доступу`);
+      x.title = 'Прибрати';
+      x.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); CRM.unpin(p.id); });
+      el.append(x);
     });
   }
-  const safeHost = (u) => { try { return new URL(u).host.replace(/^www\./, ''); } catch (e) { return u; } };
+  document.addEventListener('crm:pins', (e) => renderPins(e.detail));
+  const loadPins = () => CRM.pins().then(renderPins);
+
+  // Модалка «Закріпити»: пошук по сторінках CRM угорі; вибір підставляє назву й адресу. Можна й просто вставити посилання.
+  const pinForm = document.querySelector('[data-form="pin"]');
+  if (pinForm && !pinForm.querySelector('[data-pin-search]')) {
+    const body = pinForm.querySelector('.modal_body') || pinForm;
+    const titleIn = pinForm.querySelector('[name="title"]');
+    const urlIn = pinForm.querySelector('[name="url"]');
+    if (urlIn) { urlIn.type = 'text'; urlIn.placeholder = 'https://… або сторінка CRM'; urlIn.autocomplete = 'off'; }
+    const head = pinForm.closest('[data-modal]')?.querySelector('.card_title');
+    if (head) head.textContent = 'Додати в швидкий доступ';
+    const field = document.createElement('div');
+    field.className = 'form_field';
+    field.innerHTML = '<label class="field-label" for="pin-search">Сторінка CRM</label>'
+      + '<input class="form-input" id="pin-search" type="search" autocomplete="off" data-pin-search placeholder="Проєкт, документ, правка, розділ…">'
+      + '<div class="pin_results" data-pin-results role="listbox" aria-label="Сторінки CRM"></div>'
+      + '<div class="pin_or">або встав посилання</div>';
+    body.prepend(field);
+    const search = field.querySelector('[data-pin-search]');
+    const box = field.querySelector('[data-pin-results]');
+    let auto = '';      // назва, яку підставили ми (якщо людина її не правила — замінюємо при новому виборі)
+    let timer = null;
+    let token = 0;
+    const choose = (r) => {
+      if (titleIn && (!titleIn.value.trim() || titleIn.value === auto)) titleIn.value = auto = r.title;
+      if (urlIn) urlIn.value = r.url;
+      box.querySelectorAll('.pin_option').forEach((o) => o.classList.toggle('is-active', o.dataset.url === r.url));
+    };
+    const show = async () => {
+      const my = ++token;
+      const pinned = new Set((await CRM.pins()).map((p) => p.url));
+      const rows = (await CRM.searchPages(search.value)).filter((r) => !pinned.has(r.url)).slice(0, 7);
+      if (my !== token) return; // поки чекали, запит змінився
+      box.replaceChildren(...rows.map((r) => {
+        const o = document.createElement('button');
+        o.type = 'button';
+        o.className = 'pin_option';
+        o.dataset.url = r.url;
+        o.setAttribute('role', 'option');
+        o.innerHTML = '<span class="pin_option-title"></span><span class="pin_option-type"></span>';
+        o.firstChild.textContent = r.title;
+        o.lastChild.textContent = r.type;
+        o.addEventListener('click', () => choose(r));
+        return o;
+      }));
+      if (!rows.length) box.innerHTML = '<div class="pin_option-empty">Нічого не знайшли — встав посилання нижче</div>';
+    };
+    search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(show, 200); });
+    search.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault(); // Enter у пошуку — вибрати перший варіант, а не надіслати форму
+      box.querySelector('.pin_option')?.click();
+    });
+    // відкрили модалку — свіжий список розділів, фокус у пошуку
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-action="open:pin"]')) return;
+      search.value = ''; auto = '';
+      show();
+      setTimeout(() => search.focus(), 50);
+    });
+  }
 
   onSubmit('pin', async (data, form) => {
-    const { error } = await sb.from('pins').insert({ title: data.title.trim(), url: data.url.trim() });
-    if (error) throw error;
+    await CRM.pin(data.title, data.url);
     form.reset();
+    form.querySelectorAll('.pin_option.is-active').forEach((o) => o.classList.remove('is-active'));
     modal.close();
-    toast('Закріплено');
-    loadPins();
   });
 
   // ---------- Пульс агенції (PM/admin) ----------

@@ -56,6 +56,9 @@ CRM.module('projects', (root, { sb, render, onSubmit, modal, toast, badge, can, 
     });
     const del = m.querySelector('[data-action="project-delete"]');
     if (del) del.hidden = !p;
+    // v0.15.2: заголовок модалки залежить від режиму
+    const title = m.querySelector('.modal_header .card_title');
+    if (title) title.textContent = p ? 'Редагувати проєкт' : 'Новий проєкт';
   }
   // v0.11: видалення з модалки (лише в режимі редагування)
   action('project-delete', async () => {

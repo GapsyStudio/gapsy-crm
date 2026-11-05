@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.15.0
+ * Gapsy CRM · crm-core.js v0.15.2
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -490,6 +490,9 @@
       a.classList.toggle('is-active', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+    // v0.15.2: меню скролиться окремо — показуємо активний пункт, якщо він нижче видимої частини
+    const act = $('.app_nav [data-nav].is-active');
+    if (act) requestAnimationFrame(() => act.scrollIntoView({ block: 'nearest' }));
     // хлібні крихти = заголовок сторінки (модуль може перевизначити через CRM.crumbs)
     const h1 = $('[data-page-content] h1');
     if (h1) CRM.crumbs(h1.textContent.trim());

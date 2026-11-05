@@ -67,6 +67,7 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     set('client', data.client || 'Без клієнта');
     set('summary', data.summary || 'Опису ще немає.');
     set('prefix', data.prefix || '—');
+    $('[data-item="prefix"]')?.classList.toggle('is-empty', !data.prefix); // v0.15.2: порожній префікс — просто текст, без рамки чипа
     badge($('[data-item="status"]'), data.status, STATUS);
     badge($('[data-item="stage"]'), data.stage || 'design', CRM.STAGE);
     const short = (d) => date(d, { day: 'numeric', month: 'short' });

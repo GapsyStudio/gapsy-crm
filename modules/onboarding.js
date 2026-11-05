@@ -17,6 +17,7 @@ CRM.module('onboarding', async (root, CRM) => {
   const STATUS = { todo: ['Не пройдено', ''], passed: ['Пройдено', 'is-green'], failed: ['Не склав — спробуй ще', 'is-yellow'] };
   const me = CRM.profile || {};
   const isNew = me.role === 'pending';
+  const isAdmin = me.role === 'admin'; // v0.15.2: admin бачить онбординг лише як перегляд квізів, без запиту на роль
   const $ = (s) => root.querySelector(s);
   let target = null;          // роль, на яку йде людина
   let attempts = [];
@@ -58,7 +59,8 @@ CRM.module('onboarding', async (root, CRM) => {
       b.classList.toggle('is-active', r === target);
       b.setAttribute('aria-pressed', r === target);
     });
-    const tracks = target ? (isNew ? ['crm', target] : [target]) : (isNew ? ['crm'] : []);
+    const withCrm = isNew || isAdmin;
+    const tracks = target ? (withCrm ? ['crm', target] : [target]) : (withCrm ? ['crm'] : []);
     const steps = await Promise.all(tracks.map(async (t) => {
       const b = best(t);
       return {
@@ -93,15 +95,16 @@ CRM.module('onboarding', async (root, CRM) => {
     const cancel = $('[data-action="role-request-cancel"]');
     const ready = target && tracks.every(passed);
     const pending = request?.status === 'pending';
-    if (block) block.hidden = !target && !pending;
+    if (block) block.hidden = !isAdmin && !target && !pending;
     if (btn) {
-      btn.hidden = pending;
+      btn.hidden = pending || isAdmin;
       btn.classList.toggle('is-disabled', !ready);
       btn.setAttribute('aria-disabled', String(!ready));
       btn.textContent = target ? `Надіслати запит на роль «${ROLE[target]}»` : 'Надіслати запит на роль';
     }
     if (cancel) cancel.hidden = !pending;
-    if (st) {
+    if (st && isAdmin) st.textContent = 'Ти admin: тут можна переглянути й пройти квізи. Запит на роль не потрібен — ролі змінюються в Адмінці.';
+    else if (st) {
       st.textContent = pending ? `Запит на роль «${ROLE[request.role]}» надіслано. Admin отримав сповіщення.`
         : request?.status === 'rejected' ? `Попередній запит відхилено: ${request.decision_note || 'без коментаря'}`
           : ready ? 'Усі квізи пройдено — можна надсилати запит.'
@@ -195,6 +198,7 @@ CRM.module('onboarding', async (root, CRM) => {
 
   // ---------- запит на роль ----------
   action('role-request', async () => {
+    if (isAdmin) return toast('Admin змінює ролі в Адмінці');
     if (!target) return toast('Обери роль');
     const tracks = isNew ? ['crm', target] : [target];
     if (!tracks.every(passed)) return toast('Спершу пройди всі квізи');

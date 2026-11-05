@@ -21,7 +21,7 @@ CRM.module('fonts', async (root, CRM) => {
     free: ['Безкоштовна', 'is-green'], commercial: ['Комерційна', 'is-blue'],
     trial: ['Пробна', 'is-yellow'], unknown: ['Ліцензію не вказано', 'is-red'],
   };
-  const OWNER = { agency: 'Ліцензія агенції', client: 'Ліцензія клієнта' };
+  const OWNER = { agency: 'Купила агенція', client: 'Купив клієнт' }; // v0.15.2: щоб не плутати з типом ліцензії
   const PLACES = { desktop: 'Desktop', web: 'Web', app: 'App' };
   const FONT_EXT = /\.(woff2?|ttf|otf)$/i;
   const WEIGHTS = [[/hairline|thin/i, 100], [/extra.?light|ultra.?light/i, 200], [/light/i, 300], [/semi.?bold|demi.?bold/i, 600],
@@ -29,7 +29,7 @@ CRM.module('fonts', async (root, CRM) => {
   const safeUrl = (u) => (u && /^https?:\/\//i.test(u) ? u : null);
   // списки для select[data-options] у модалці (Webflow може загубити <option>, тож їх підставляє JS)
   CRM.optionLists['font-license'] = Object.entries(LICENSE).map(([v, [t]]) => [v, t === 'Ліцензію не вказано' ? 'Невідомо' : t]);
-  CRM.optionLists['font-owner'] = Object.entries(OWNER).map(([v, t]) => [v, t.replace('Ліцензія ', '')]);
+  CRM.optionLists['font-owner'] = [['agency', 'Агенція'], ['client', 'Клієнт']];
   const fontFamily = (id) => `crmfont-${id}`;
 
   /** Попередження для шрифту, що використовується в проєктах. */

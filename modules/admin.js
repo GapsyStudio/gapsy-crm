@@ -87,6 +87,8 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
     if (error) return CRM.fail(error);
     const box = root.querySelector('[data-role-requests]');
     if (box) box.hidden = !(data || []).length;
+    // v0.15.1: посилання зі сповіщення /admin#role-requests — секція показується лише після завантаження, тож прокручуємо самі
+    if (box && !box.hidden && location.hash === '#role-requests') requestAnimationFrame(() => box.scrollIntoView({ block: 'start' }));
     render('role-requests', (data || []).map((r) => ({
       ...r, user: name(r), avatar: r.avatar_url || '', role: RNAME[r.role] || r.role,
       from_role: r.from_role && r.from_role !== 'pending' ? `зараз ${RNAME[r.from_role] || r.from_role}` : 'новачок',

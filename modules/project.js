@@ -12,7 +12,9 @@
  * Права: редагувати проєкт і команду — PM/admin (RLS). Нотатки й хендофф — уся команда.
  * v0.17: нотатки мають тип (kind: note | decision | client | choice) і посилання (link: Slack, ClickUp, лист…).
  *   Модуль сам додає у форму project-note select kind і поле link, а над списком — фільтр [data-notes-filter].
- *   У рядку: бейдж типу перед текстом і кнопка «Джерело ↗». «Вибір клієнта» завжди зверху після закріплених. */
+ *   У рядку: бейдж типу перед текстом і кнопка «Джерело ↗». «Вибір клієнта» завжди зверху після закріплених.
+ * v0.18: секція #waits «Чекаємо від клієнта» перед нотатками (client_waits): що чекаємо, відколи, скільки днів;
+ *   «Отримали» закриває пункт. Додає будь-хто з команди; закриває автор або PM/admin. Модуль будує секцію сам. */
 CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, toast, action, badge, time, date, name, crumbs, param, can }) => {
   const id = param('id');
   if (!id) return location.replace('/projects');
@@ -474,8 +476,83 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
   }
 
   // =================================================================
+  // ЧЕКАЄМО ВІД КЛІЄНТА (v0.18)
+  // =================================================================
+  function initWaits() {
+    if (root.querySelector('[data-waits]')) return;
+    const notesSec = root.querySelector('[data-list="project-notes"]')?.closest('section');
+    if (!notesSec) return;
+    const mk = (t, c, text) => { const e = document.createElement(t); if (c) e.className = c; if (text != null) e.textContent = text; return e; };
+    const sec = mk('section', 'waits_section');
+    sec.id = 'waits';
+    sec.dataset.waits = '';
+    const hd = mk('div', 'card_header');
+    hd.append(mk('div', 'section_title', 'Чекаємо від клієнта'));
+    const list = mk('div', 'list waits_list');
+    const form = mk('form', 'waits_form');
+    form.dataset.form = 'client-wait';
+    form.innerHTML = '<input class="form-input" name="what" maxlength="300" required placeholder="Що чекаємо: тексти, доступи, фідбек по макету…" aria-label="Що чекаємо від клієнта">'
+      + '<input class="form-input" name="since" type="date" aria-label="Відколи чекаємо">'
+      + '<button class="button is-secondary is-small" type="submit">Додати</button>';
+    sec.append(hd, list, form);
+    notesSec.before(sec);
+    form.elements.since.value = new Date().toLocaleDateString('sv');
+  }
+  async function loadWaits() {
+    const list = root.querySelector('[data-waits] .waits_list');
+    if (!list) return;
+    const { data, error } = await sb.from('client_waits').select('id, what, since, created_by').eq('project_id', id).is('resolved_at', null).order('since');
+    if (error) return console.warn('[CRM] client_waits', error.message);
+    const days = (d) => Math.round((new Date(new Date().toDateString()) - new Date(`${d}T00:00:00`)) / 864e5);
+    list.replaceChildren();
+    if (!data.length) {
+      const e = document.createElement('div');
+      e.className = 'empty_state';
+      e.innerHTML = '<div class="text-size-small">Нічого не чекаємо — усе в наших руках</div>';
+      list.append(e);
+      return;
+    }
+    data.forEach((w) => {
+      const row = document.createElement('div');
+      row.className = 'list_row';
+      row.dataset.id = w.id;
+      const n = days(w.since);
+      const t = document.createElement('span'); t.className = 'list_title'; t.textContent = w.what;
+      const m = document.createElement('span'); m.className = `list_meta${n >= 5 ? ' is-red' : ''}`;
+      m.textContent = n > 0 ? `з ${date(w.since, { day: 'numeric', month: 'short' })} · ${n} дн.` : 'з сьогодні';
+      row.append(t, m);
+      if (w.created_by === user.id || can('pm,admin')) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'button is-text is-small'; b.dataset.action = 'wait-done'; b.textContent = 'Отримали';
+        row.append(b);
+      }
+      list.append(row);
+    });
+  }
+  onSubmit('client-wait', async (d, form) => {
+    const what = (d.what || '').trim();
+    if (!what) return;
+    const since = /^\d{4}-\d{2}-\d{2}$/.test(d.since || '') ? d.since : new Date().toLocaleDateString('sv');
+    const { error } = await sb.from('client_waits').insert({ project_id: id, what, since });
+    if (error) throw error;
+    form.elements.what.value = '';
+    loadWaits();
+  });
+  action('wait-done', async (el) => {
+    const wid = el.closest('[data-id]')?.dataset.id;
+    if (!wid) return;
+    const { error } = await sb.from('client_waits').update({ resolved_at: new Date().toISOString() }).eq('id', wid);
+    if (error) return CRM.fail(error);
+    toast('Отримали — прибрано з очікування');
+    loadWaits();
+  });
+
+  // =================================================================
   await loadProject();
   await Promise.all([loadTeam(), loadNotes(), loadHandoff(), loadRelated()]);
   initChecklist();
-  if (location.hash === '#handoff') $('[data-handoff]')?.scrollIntoView({ block: 'start' });
+  initWaits();
+  loadWaits();
+  if (location.hash === '#handoff') root.querySelector('[data-handoff]')?.scrollIntoView({ block: 'start' });
+  if (location.hash === '#waits') root.querySelector('[data-waits]')?.scrollIntoView({ block: 'start' });
 });

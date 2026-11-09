@@ -1,0 +1,57 @@
+  /* 13. v0.18 Sales-хаб (/cases: фільтри, добірка, шаблони, ціни) і PM (огляд проєктів, «Чекаємо від клієнта») */
+  [data-element="cases"] > .tabs_menu { margin-bottom: 0; }
+  .cases_pane[hidden] { display: none !important; }
+  .cases_toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .cases_toolbar .cases_search { flex: 1 1 18rem; margin-bottom: 0; }
+  .cases_facets { display: flex; flex-direction: column; gap: 1rem; }
+  .cases_chip { display: inline-flex; align-items: center; gap: 0.375rem; }
+  .cases_chip-count { font-size: 0.75rem; color: var(--text--secondary, #797979); font-variant-numeric: tabular-nums; }
+  .cases_chip.is-active .cases_chip-count { color: var(--text--primary, #1f1f1f); }
+  .cases_chip.is-more { border-style: dashed; color: var(--text--secondary, #797979); }
+  .cases_chip.is-more:hover { color: var(--text--primary, #1f1f1f); }
+  .cases_card { position: relative; transition: box-shadow .15s ease, border-color .15s ease; }
+  .cases_card.is-picked { border-color: var(--brand--coral, #fe6f61); box-shadow: inset 0 0 0 1px var(--brand--coral, #fe6f61); }
+  .cases_pick { margin-left: auto; border: 0; border-radius: 0.375rem; padding: 0.25rem 0.5rem; background: var(--background--hover, #ececec); color: var(--text--primary, #1f1f1f); font: inherit; font-size: 0.8125rem; cursor: pointer; white-space: nowrap; }
+  .cases_pick:hover { background: var(--border--default, #e2e2e2); }
+  .cases_pick[aria-pressed="true"] { background: transparent; color: var(--brand--coral, #fe6f61); }
+  .cases_card-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .cases_tray { position: sticky; bottom: 1rem; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--border--default, #e2e2e2); border-radius: 0.75rem; background: var(--background--primary, #fff); box-shadow: 0 2px 4px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.10); }
+  .cases_tray[hidden] { display: none; }
+  .cases_tray-text { flex: 1 1 auto; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+  .cases_tray .form-input { width: auto; flex: 0 1 16rem; min-width: 0; margin-bottom: 0; height: 2rem !important; font-size: 0.8125rem; }
+  .cases_tpl-groups { display: flex; flex-direction: column; gap: 1.5rem; }
+  .cases_tpl-groups .list_row { flex-wrap: wrap; row-gap: 0.125rem; }
+  .cases_tpl-groups .list_row > .list_title { flex: 0 0 auto; }
+  .cases_tpl-groups .list_row > .list_meta { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cases_vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0 1rem; }
+  .cases_vars:empty { display: none; }
+  .cases_tpl-preview { white-space: pre-wrap; font-size: 0.875rem; line-height: 1.55; padding: 0.75rem 1rem; border-radius: 0.5rem; background: var(--background--subtle, #f4f4f4); max-height: 22rem; overflow: auto; }
+  .cases_price-row { align-items: center; gap: 1rem; }
+  .cases_price-row > .person_text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
+  .cases_price { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 500; }
+  .cases_days { flex: 0 0 7.5rem; text-align: right; }
+  @media (max-width: 479px) { .cases_price-row { flex-wrap: wrap; } .cases_days { flex-basis: auto; text-align: left; } }
+  /* Проєкт: «Чекаємо від клієнта» */
+  .waits_section .card_header { margin-bottom: 1rem; }
+  .waits_list .list_row { gap: 1rem; }
+  .waits_list .list_row > .list_title { flex: 1 1 auto; min-width: 0; }
+  .waits_list .list_meta.is-red, [data-home] .list_meta.is-red { color: var(--status--error, #d6453d); }
+  .waits_form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+  .waits_form .form-input { margin-bottom: 0; }
+  .waits_form .form-input[name="what"] { flex: 1 1 16rem; min-width: 0; }
+  .waits_form .form-input[name="since"] { flex: 0 0 10rem; }
+  /* Проєкти: перемикач і таблиця огляду */
+  .view_switch { display: inline-flex; gap: 0.25rem; padding: 0.25rem; border-radius: 0.5rem; background: var(--background--subtle, #f4f4f4); align-self: flex-start; margin-bottom: 1rem; }
+  .view_switch-btn { border: 0; border-radius: 0.375rem; padding: 0 0.75rem; height: 2rem; background: transparent; color: var(--text--secondary, #797979); font: inherit; font-size: 0.875rem; cursor: pointer; }
+  .view_switch-btn.is-active { background: var(--background--primary, #fff); color: var(--text--primary, #1f1f1f); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .pm_table { display: flex; flex-direction: column; border: 1px solid var(--border--default, #e2e2e2); border-radius: 0.75rem; overflow-x: auto; }
+  .pm_table[hidden] { display: none; }
+  .pm_row { display: grid; grid-template-columns: minmax(12rem, 2fr) 7.5rem 5.5rem 5.5rem 7rem 7rem 6.5rem minmax(6rem, 1fr); gap: 1rem; align-items: center; min-width: 62rem; min-height: 3.25rem; padding: 0.5rem 1rem; border-top: 1px solid var(--border--default, #e2e2e2); color: inherit; text-decoration: none; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+  .pm_row.is-head { border-top: 0; min-height: 2.5rem; font-size: 0.75rem; color: var(--text--secondary, #797979); }
+  a.pm_row:hover { background: var(--background--subtle, #f4f4f4); }
+  a.pm_row:hover .list_title { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .pm_row > .is-red { color: var(--status--error, #d6453d); }
+  .pm_name { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+  .pm_name > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm_team { display: flex; }
+  .pm_avatar { width: 1.75rem; height: 1.75rem; margin-right: -0.375rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid var(--background--primary, #fff); background: var(--background--hover, #ececec); font-size: 0.6875rem; font-weight: 500; }

@@ -15,6 +15,9 @@
  *     [data-home="reviews"]  «Чекають погодження» (art, admin);
  *     [data-home="leads"]    Sales: «Мої ліди» + модалка data-modal="lead" (форма data-form="lead"); PM/admin: «Ліди від Sales» (дії lead-take, lead-decline);
  *     [data-home="links"]    Sales: швидкі розділи з меню.
+ *   v0.18: ліди Sales — етап і запуск проєкту, «Кейси (N)» → /cases?lead=, «Нагадати» (нагадування на завтра);
+ *          PM/admin: у «Пульсі» картка [data-home="waits"] «Чекаємо від клієнта» (client_waits), у «Сьогодні» — очікування ≥ 3 дн.,
+ *          у «Завантаженості» — відпустки найближчих 14 днів (RPC team_absences).
  *   Порядок блоків — ORDER нижче. Наявні блоки (пульс, баланс, правки й документи, закріплене) лише переставляються. */
 CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge, crumbs, time, date, name, can, action }) => {
   crumbs('Головна');
@@ -309,7 +312,15 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
   }
 
   // ---------- Ліди (Sales ↔ PM) ----------
-  const LEAD = { new: ['Новий', 'is-blue'], taken: ['У роботі', 'is-green'], declined: ['Відхилено', ''] };
+  const LEAD = { new: ['Новий', 'is-blue'], taken: ['У роботі', 'is-green'], done: ['Запущено', 'is-green'], declined: ['Відхилено', ''] };
+  // «Нагадати» — нагадування на завтра в «Сьогодні»
+  action('lead-remind', async (el) => {
+    const due = new Date(Date.now() + 864e5).toLocaleDateString('sv');
+    const { error } = await sb.from('reminders').insert({ title: el.dataset.title || 'Написати клієнту', due_on: due, url: '/app#leads' });
+    if (error) return CRM.fail(error);
+    toast('Нагадаю завтра');
+    loadReminders();
+  });
   function leadModal() {
     if (document.querySelector('[data-modal="lead"]')) return;
     const w = h('div', 'modal_wrapper');
@@ -331,13 +342,13 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
   async function loadLeads() {
     const box = root.querySelector('[data-home="leads"]');
     const isSales = ROLE_HOME === 'sales';
-    if (isSales && box) {
+    if (isSales && box && !box.querySelector('[data-action="open:lead"]')) {
       leadModal();
       const add = h('a', 'button is-small', '+ Передати в PM');
       add.href = '#'; add.dataset.action = 'open:lead';
       box.querySelector('.home_tools').append(add);
     }
-    let q = sb.from('leads').select('id, title, client, budget, brief, status, project_id, note, created_at').order('created_at', { ascending: false });
+    let q = sb.from('leads').select('id, title, client, budget, brief, status, project_id, note, case_ids, created_at, project:projects(stage, deadline, status)').order('created_at', { ascending: false });
     q = isSales ? q.eq('created_by', user.id).limit(8) : q.eq('status', 'new').limit(10);
     const { data, error } = await q;
     if (error) return console.error(error);
@@ -347,14 +358,38 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     }
     if (!box) return;
     box.id = 'leads';
-    render(box.querySelector('[data-list="home-leads"]'), data.map((l) => ({
-      ...l, status: l.status,
-      meta: [l.client, l.budget, isSales ? (l.note || time(l.created_at)) : (l.brief || '').slice(0, 90)].filter(Boolean).join(' · '),
-    })), (el, l) => {
+    // воронка для Sales: новий → у роботі (етап проєкту, дата запуску) → запущено
+    const funnel = (l) => {
+      if (l.status !== 'taken' || !l.project) return null;
+      if (l.project.status === 'done') return ['done', 'Запущено'];
+      const st = (CRM.STAGE[l.project.stage] || [l.project.stage])[0];
+      return ['taken', [st, l.project.deadline ? `запуск ${short(l.project.deadline)}` : ''].filter(Boolean).join(' · ')];
+    };
+    render(box.querySelector('[data-list="home-leads"]'), data.map((l) => {
+      const f = isSales ? funnel(l) : null;
+      const cases = !isSales && l.case_ids?.length ? `кейсів у добірці: ${l.case_ids.length}` : '';
+      return {
+        ...l, status: f?.[0] === 'done' ? 'done' : l.status,
+        meta: [l.client, f?.[1], l.budget, isSales ? (l.status === 'new' ? time(l.created_at) : l.note) : (l.brief || '').slice(0, 90), cases].filter(Boolean).join(' · '),
+      };
+    }), (el, l) => {
       badge(el.querySelector('[data-field="status"]'), l.status, LEAD);
       el.dataset.id = l.id;
       if (isSales) {
         if (l.project_id) el.href = `/project?id=${l.project_id}`; else el.removeAttribute('href');
+        const acts = h('span', 'home_row-actions');
+        if (l.status === 'new') {
+          const c = h('a', 'button is-text is-small', l.case_ids?.length ? `Кейси (${l.case_ids.length})` : 'Підібрати кейси');
+          c.href = `/cases?lead=${l.id}#cases`;
+          c.addEventListener('click', (e) => e.stopPropagation());
+          acts.append(c);
+        }
+        if (l.status !== 'declined' && l.status !== 'done') {
+          const r = h('button', 'button is-text is-small', 'Нагадати'); r.type = 'button'; r.dataset.action = 'lead-remind';
+          r.dataset.title = `Написати клієнту: ${l.client || l.title}`;
+          acts.append(r);
+        }
+        if (acts.children.length) el.append(acts);
         return;
       }
       const take = h('button', 'button is-small', 'Взяти'); take.type = 'button'; take.dataset.action = 'lead-take';
@@ -540,6 +575,7 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     counts.reviews = reviewsCount || 0;
     root.querySelectorAll('[data-pulse-count]').forEach((el) => { el.textContent = counts[el.dataset.pulseCount] ?? '0'; });
     loadRenewals();
+    loadWaits(active);
 
     render('pulse-risk', risky.slice(0, 6).map((p) => ({ ...p, due: short(p.risk.date) })), (el, p) => {
       el.href = `/project?id=${p.id}`;
@@ -548,16 +584,48 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
     });
 
     const activeIds = new Set(active.map((p) => p.id));
+    // v0.18: відпустки й лікарняні найближчих 14 днів — поруч із роллю
+    const abs = await sb.rpc('team_absences', { days: 14 });
+    const away = {};
+    (abs.data || []).forEach((a) => {
+      const range = a.start_date === a.end_date ? short(a.start_date) : `${short(a.start_date)}–${short(a.end_date)}`;
+      (away[a.user_id] ||= []).push(`${a.kind === 'sick' ? 'лікарняний' : 'відпустка'} ${range}${a.status === 'pending' ? '?' : ''}`);
+    });
     const rows = ppl.data.map((u) => ({
-      id: u.id, name: name(u), role: ROLE[u.role] || u.role,
+      id: u.id, name: name(u), role: [ROLE[u.role] || u.role, ...(away[u.id] || [])].join(' · '),
       projects: mem.data.filter((m) => m.user_id === u.id && activeIds.has(m.project_id)).length,
       open: fb.data.filter((f) => f.assignee_id === u.id).length,
       overdue: overdue.filter((f) => f.assignee_id === u.id).length,
-    })).filter((u) => u.role !== 'Адмін' || u.projects || u.open)
+    })).filter((u) => !u.role.startsWith('Адмін') || u.projects || u.open)
       .sort((a, b) => b.overdue - a.overdue || b.open + b.projects - (a.open + a.projects));
     render('workload', rows, (el, u) => {
       el.querySelector('[data-field="overdue"]')?.toggleAttribute('hidden', !u.overdue);
     });
+  }
+
+  // ---------- Чекаємо від клієнта (PM/admin) ----------
+  async function loadWaits(active) {
+    const pulse = root.querySelector('[data-pulse]');
+    if (!pulse) return;
+    const { data, error } = await sb.from('client_waits').select('id, what, since, project_id, project:projects(name, status)')
+      .is('resolved_at', null).order('since');
+    if (error) return console.warn('[CRM] client_waits', error.message);
+    const rows = data.filter((w) => w.project?.status !== 'done').map((w) => ({ ...w, days: -daysFrom(w.since) }));
+    let box = pulse.querySelector('[data-home="waits"]');
+    if (!box) {
+      box = card('waits', 'Чекаємо від клієнта', { empty: 'Нічого не чекаємо — усе в наших руках', fields: ['title', 'project', 'meta'] });
+      (pulse.querySelector('[data-renewals]') || null) ? pulse.querySelector('[data-renewals]').before(box) : pulse.append(box);
+    }
+    render(box.querySelector('[data-list="home-waits"]'), rows.slice(0, 8).map((w) => ({
+      ...w, title: w.what, project: w.project?.name || '', meta: w.days > 0 ? `${w.days} дн.` : 'з сьогодні',
+    })), (el, w) => {
+      el.href = `/project?id=${w.project_id}#waits`;
+      el.querySelector('[data-field="project"]').className = 'list_meta';
+      el.querySelector('[data-field="meta"]').classList.toggle('is-red', w.days >= 5);
+    });
+    const long = rows.filter((w) => w.days >= 3);
+    put('waits', long.length ? [{ kind: ['Клієнт', 'is-yellow'], title: `Чекаємо від клієнта ≥ 3 дн.: ${long.length}`, meta: `найдовше ${long[0].days} дн.`, href: '#waits-card', sort: 1 }] : []);
+    box.id = 'waits-card';
   }
 
   // ---------- Скоро продовження підписок (PM/admin) ----------

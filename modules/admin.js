@@ -9,7 +9,7 @@
 CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, action, name, time }) => {
   const ROLE = {
     pending: ['pending', 'is-yellow'], client: ['client', ''], designer: ['designer', 'is-blue'],
-    developer: ['developer', 'is-blue'], pm: ['pm', 'is-green'], admin: ['admin', 'is-red'],
+    developer: ['developer', 'is-blue'], pm: ['pm', 'is-green'], sales: ['sales', 'is-green'], admin: ['admin', 'is-red'],
   };
   let people = [];
   let editId = null;
@@ -42,12 +42,11 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
     const title = m.querySelector('[data-user-title]');
     if (title) title.textContent = name(p);
     const f = m.querySelector('[data-form="user"]');
-    // v0.17: роль sales могло не бути в статичному списку select — додаємо після pm, якщо її нема
+    // v0.17: роль sales — додаємо варіант у select, якщо в Designer його ще немає
     const roleSel = f.elements.role;
-    if (roleSel && !roleSel.querySelector('option[value="sales"]')) {
-      const o = new Option('sales', 'sales');
-      const pm = roleSel.querySelector('option[value="pm"]');
-      if (pm) pm.after(o); else roleSel.add(o);
+    if (roleSel?.tagName === 'SELECT' && !roleSel.querySelector('option[value="sales"]')) {
+      const o = new Option('Sales', 'sales');
+      roleSel.insertBefore(o, roleSel.querySelector('option[value="admin"]'));
     }
     f.elements.role.value = p.role === 'pending' ? 'designer' : p.role;
     f.elements.clickup_task_id.value = p.clickup_task_id || '';
@@ -88,7 +87,7 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
   // =================================================================
   // v0.15 ЗАПИТИ НА РОЛЬ
   // =================================================================
-  const RNAME = { designer: 'Дизайнер', developer: 'Розробник', pm: 'PM', pending: 'новачок', admin: 'admin', client: 'клієнт' };
+  const RNAME = { designer: 'Дизайнер', developer: 'Розробник', pm: 'PM', sales: 'Sales', pending: 'новачок', admin: 'admin', client: 'клієнт' };
   async function loadRequests() {
     const { data, error } = await sb.rpc('role_requests_admin');
     if (error) return CRM.fail(error);

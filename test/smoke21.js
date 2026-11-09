@@ -9,21 +9,21 @@ const { chromium } = require('playwright');
   console.log('initial:', JSON.stringify(await pins(p)));
   console.log('no star on /app:', !(await p.$('[data-action="pin-page"]')));
   await p.click('[data-action="open:pin"]'); await p.waitForTimeout(400);
-  console.log('picker + url type:', !!(await p.$('[data-pin-search]')), await p.$eval('[name="url"]', (e) => e.type));
+  console.log('picker + url type:', !!(await p.$('[data-pin-search]')), await p.$eval('[data-form="pin"] [name="url"]', (e) => e.type));
   console.log('sections:', await p.$$eval('.pin_option', (x) => x.map((e) => e.textContent).join(' | ')));
   await p.fill('[data-pin-search]', 'Кнопка'); await p.waitForTimeout(500);
   console.log('search:', await p.$$eval('.pin_option', (x) => x.map((e) => e.textContent).join(' | ')));
   await p.press('[data-pin-search]', 'Enter'); await p.waitForTimeout(200);
-  console.log('filled:', await p.$eval('[name="title"]', (e) => e.value), await p.$eval('[name="url"]', (e) => e.value));
+  console.log('filled:', await p.$eval('[data-form="pin"] [name="title"]', (e) => e.value), await p.$eval('[data-form="pin"] [name="url"]', (e) => e.value));
   await p.click('[data-form="pin"] button[type="submit"]'); await p.waitForTimeout(600);
   const ins = () => p.evaluate(() => window.__calls.filter((c) => c[0] === 'insert' && c[1] === 'pins').map((c) => c[2]));
   console.log('inserted:', JSON.stringify(await ins()));
   // зовнішнє посилання і невалідне
   await p.click('[data-action="open:pin"]'); await p.waitForTimeout(300);
-  await p.fill('[name="title"]', 'Погане'); await p.fill('[name="url"]', 'javascript:alert(1)');
+  await p.fill('[data-form="pin"] [name="title"]', 'Погане'); await p.fill('[data-form="pin"] [name="url"]', 'javascript:alert(1)');
   await p.click('[data-form="pin"] button[type="submit"]'); await p.waitForTimeout(400);
   console.log('bad rejected:', !(await ins()).some((x) => x.title === 'Погане'));
-  await p.fill('[name="url"]', 'http://localhost:8765/feedback?x=1'); await p.fill('[name="title"]', 'Правки фільтр');
+  await p.fill('[data-form="pin"] [name="url"]', 'http://localhost:8765/feedback?x=1'); await p.fill('[data-form="pin"] [name="title"]', 'Правки фільтр');
   await p.click('[data-form="pin"] button[type="submit"]'); await p.waitForTimeout(500);
   console.log('same-origin → path:', JSON.stringify((await ins()).find((x) => x.title === 'Правки фільтр')));
   // × прибирає

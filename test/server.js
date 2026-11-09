@@ -55,14 +55,14 @@ const PAGES = {
       '<a href="#" class="check_row" data-template data-action="handoff-check" role="checkbox" aria-checked="false"><span class="check_box">✓</span><span data-field="label">Пункт</span></a>')),
   '/snippets': SHELL('staff', W('snippets.html')),
   '/snippet': SHELL('staff', W('snippet.html')),
-  '/app': SHELL('auth', `<div data-element="dashboard"><h1>Привіт, <span data-crm-user="full_name">колего</span></h1><div data-today></div>
-    <section id="bal" hidden><div data-element="leave-balance"><a class="card" href="/leave"><div data-balance="vacation">—</div><div data-balance-sub="vacation">днів</div></a><a class="card" href="/leave"><div data-balance="sick">—</div></a><a class="card" href="/leave#approvals" data-leave-approver="1" hidden><div data-balance="pending-approvals">—</div></a></div></section>
-    <div data-list="my-feedback"><a data-template><span data-field="status"></span><span data-field="title"></span><span data-field="project"></span></a><div data-empty>e</div></div>
-    <div data-list="recent-docs"><a data-template><span data-field="title"></span></a><div data-empty>e</div></div>
+  '/app': SHELL('auth', `<nav class="app_nav"><a data-nav="/app" href="/app">Головна</a><a data-nav="/showcase" href="/showcase">Showcase</a><a data-nav="/access" href="/access">Доступи</a><a data-nav="/docs" href="/docs">База знань</a></nav><div data-element="dashboard" class="stack"><div class="page_header"><div><h1>Привіт, <span data-crm-user="full_name">колего</span></h1><div data-today></div></div></div>
     <section data-pulse data-crm-role="pm,admin"><b data-pulse-count="risk">-</b><b data-pulse-count="overdue">-</b><b data-pulse-count="handoffs">-</b><b data-pulse-count="active">-</b>
       <div data-list="pulse-risk"><a data-template><span data-field="name"></span><span data-field="stage"></span><span data-field="due"></span><span data-field="risk"></span></a><div data-empty>e</div></div>
       <div data-list="workload"><div data-template><span data-field="name"></span><span data-field="role"></span><span data-field="projects"></span><span data-field="open"></span><span data-field="overdue"></span></div><div data-empty>e</div></div></section>
-    <a href="#" data-action="open:pin">+</a><div data-list="pins"><a data-template><span data-field="title"></span><span data-field="host"></span></a><div data-empty>e</div></div>
+    <section id="bal" hidden><div data-element="leave-balance"><a class="card" href="/leave"><div data-balance="vacation">—</div><div data-balance-sub="vacation">днів</div></a><a class="card" href="/leave"><div data-balance="sick">—</div></a><a class="card" href="/leave#approvals" data-leave-approver="1" hidden><div data-balance="pending-approvals">—</div></a></div></section>
+    <div class="grid-2col"><div class="card"><div data-list="my-feedback"><a data-template><span data-field="status"></span><span data-field="title"></span><span data-field="project"></span></a><div data-empty>e</div></div></div>
+    <div class="card"><div data-list="recent-docs"><a data-template><span data-field="title"></span></a><div data-empty>e</div></div></div></div>
+    <section><a href="#" data-action="open:pin">+</a><div data-list="pins"><a data-template><span data-field="title"></span><span data-field="host"></span></a><div data-empty>e</div></div></section>
     <div class="modal_wrapper" data-modal="pin"><form data-form="pin"><input name="title" required><input name="url" type="url" required><button type="submit">ok</button></form></div></div>`),
   '/feedback': SHELL('staff', `<div data-element="feedback"><h1>Правки</h1><a href="#" data-action="open:feedback-new">Нова</a>
     <div data-tabs="status"><a href="#" data-tab="open">Відкриті</a><a href="#" data-tab="overdue">Прострочені <span data-count="overdue">0</span></a><a href="#" data-tab="resolved">Resolved</a><a href="#" data-tab="mine">Мої</a></div>

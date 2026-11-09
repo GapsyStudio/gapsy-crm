@@ -1,0 +1,39 @@
+  /* 12. v0.17 Головна під роль, нагадування, ліди, спільні доступи, типи нотаток (елементи створює JS) */
+  [data-element="dashboard"] > [data-home] { margin: 0; }
+  .home_tools { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  .home_tools > .list_meta:empty { display: none; }
+  .card_header > .home_tools > .button.is-text.is-small:last-child { margin-right: -0.5rem; }
+  [data-home] .list_row > .badge { flex: 0 0 auto; }
+  [data-home] .list_row > .list_title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-home] .list_row > .list_meta { flex: 0 0 auto; }
+  [data-home] .list_meta.is-red { color: var(--status--error, #d6453d); }
+  [data-home] a.list_row:not([href]) { cursor: default; }
+  .today_check { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border--default, #e2e2e2); border-radius: 0.375rem; background: transparent; color: transparent; font-size: 0.75rem; cursor: pointer; }
+  .today_check:hover, .today_check:focus-visible { border-color: var(--text--primary, #1f1f1f); color: var(--text--secondary, #797979); }
+  .list_row.is-done { opacity: .45; }
+  .list_row.is-done .list_title { text-decoration: line-through; }
+  .today_add { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+  .today_add[hidden] { display: none; }
+  .today_add .form-input { margin-bottom: 0; }
+  .today_add .form-input[name="title"] { flex: 1 1 14rem; min-width: 0; }
+  .today_add .form-input[name="due_on"] { flex: 0 0 10rem; }
+  .home_row-actions { display: flex; gap: 0.5rem; margin-left: auto; flex: 0 0 auto; }
+  [data-home="leads"] .list_row { flex-wrap: wrap; row-gap: 0.5rem; }
+  [data-home="leads"] .list_row > .list_meta { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; order: 3; }
+  [data-home="leads"] .list_row > .home_row-actions { order: 2; }
+  [data-modal="lead"] .grid-2col { gap: 1rem; }
+  @media (max-width: 479px) {
+    .today_add .form-input[name="due_on"] { flex: 1 1 100%; }
+    [data-home] .list_row > .list_title { white-space: normal; flex-basis: 100%; order: 2; }
+    [data-home] .list_row > .list_meta { order: 3; }
+  }
+  .check_field { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; cursor: pointer; }
+  .check_field input { width: 1.125rem; height: 1.125rem; margin: 0; accent-color: var(--accent--primary, #1f1f1f); }
+  .notes_filter { display: flex; gap: 0.5rem; margin-bottom: 1rem; overflow-x: auto; scrollbar-width: none; }
+  .notes_filter .tabs_link { border: 0; font: inherit; background: transparent; cursor: pointer; }
+  .notes_extra { display: flex; flex-wrap: wrap; gap: 0.5rem; width: 100%; }
+  .notes_extra .form-input { margin-bottom: 0; }
+  .notes_extra .notes_kind { flex: 0 0 12rem; }
+  .notes_extra .notes_link { flex: 1 1 14rem; min-width: 0; }
+  .comment_head > .badge { margin-left: 0.25rem; }
+  .comment_form:has(.notes_extra) { flex-wrap: wrap; }

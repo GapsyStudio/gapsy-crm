@@ -109,8 +109,8 @@ window.supabase = { createClient: () => ({
     onAuthStateChange() {}, signOut: async () => {}, signInWithPassword: async () => ({}), signInWithOAuth: async () => ({}),
   },
   from: builder,
-  functions: { invoke: async (name, opts) => { window.__calls.push(['fn', name, opts?.body]); return { data: { synced_at: new Date().toISOString(), cached: false }, error: null }; } },
-  rpc: async (name, args) => { window.__calls.push(['rpc', name, args]); if (name === 'leave_summary') return { data: FIX.leave_summary || [], error: null };
+  functions: { invoke: async (name, opts) => { window.__calls.push(['fn', name, opts?.body]); if (window.__FN && window.__FN[name]) return window.__FN[name]; return { data: { synced_at: new Date().toISOString(), cached: false }, error: null }; } },
+  rpc: async (name, args) => { window.__calls.push(['rpc', name, args]); if (window.__RPC && name in window.__RPC) return { data: window.__RPC[name], error: null }; if (name === 'leave_summary') return { data: FIX.leave_summary || [], error: null };
     if (name === 'quiz_submit') { const ok = args.t === 'crm' ? (args.answers.q1 === 1 && args.answers.q2 === 0) : args.answers.q3 === 1; const r = { score: ok ? 2 : 1, total: 2, passed: ok, mistakes: ok ? [] : [{ id: 'q1', question: 'Що робить ⌘K?', explanation: 'Це пошук', doc_id: '3a0226a1-0275-5881-b848-96df46008c26' }] }; FIX.quiz_attempts.unshift({ track: args.t, score: r.score, total: 2, passed: ok, created_at: new Date().toISOString() }); return { data: r, error: null }; }
     if (name === 'role_request_create') { FIX.role_requests.unshift({ id: 'rr1', role: args.target, status: 'pending', created_at: new Date().toISOString() }); return { data: 'rr1', error: null }; }
     if (name === 'role_requests_admin') return { data: [{ id: 'rr9', user_id: 'u5', full_name: 'Новачок Тест', email: 'n@x', role: 'designer', from_role: 'pending', crm_score: '10/10', role_score: '11/12', status: 'pending', created_at: new Date().toISOString() }], error: null };

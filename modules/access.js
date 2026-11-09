@@ -19,7 +19,10 @@
  *     поле [data-field="grant"] («Доступ до 14:30» / «Запит надіслано»).
  *     Модалка data-modal="access-request" (форма data-form="access-request": reason).
  *     PM/admin: секція [data-access-requests] зі списком data-list="access-requests" (поля who, item, reason, time;
- *     кнопки data-action="areq-approve" data-hours="1|24|168" і data-action="areq-decline"). */
+ *     кнопки data-action="areq-approve" data-hours="1|24|168" і data-action="areq-decline").
+ * v0.17: спільні доступи (is_shared) — пароль бачить уся команда без запиту, кожен перегляд у журналі.
+ *   Позначку ставить PM/admin чекбоксом «Спільний» у формі access-item (модуль додає його сам; RPC access_set_shared).
+ *   У картці: бейдж [data-field="secret"] = «Спільний», кнопка показу з data-access-grant доступна всім, «Попросити» ховається. */
 CRM.module('access', async (root, CRM) => {
   const { sb, render, onSubmit, modal, toast, action, param, can, time } = CRM;
   const KIND = { service: 'Сервіс', course: 'Курс / платформа' };
@@ -43,7 +46,7 @@ CRM.module('access', async (root, CRM) => {
 
   async function load() {
     const { data, error } = await sb.from('access_items')
-      .select('id, kind, name, url, notes, secret_id, secret_set_at, updated_at, price, currency, period, renews_on').order('name');
+      .select('id, kind, name, url, notes, secret_id, secret_set_at, updated_at, price, currency, period, renews_on, is_shared').order('name');
     if (error) return CRM.fail(error);
     items = data || [];
     // запити доступу: свої (RLS віддає лише свої) або всі, що чекають (PM/admin)
@@ -65,8 +68,8 @@ CRM.module('access', async (root, CRM) => {
       ...i,
       host: host(i.url),
       notes: i.notes || '',
-      secret: i.secret_id ? 'Є доступ' : 'Без доступу',
-      updated: i.secret_set_at ? `Доступ оновлено ${time(i.secret_set_at)}` : '',
+      secret: i.secret_id ? (i.is_shared ? 'Спільний' : 'Є доступ') : 'Без доступу',
+      updated: i.secret_set_at ? `Пароль змінено ${time(i.secret_set_at)}` : '',
       price: i.price != null ? `${money(i.price, i.currency)}${PERIOD_SHORT[i.period] ? ` / ${PERIOD_SHORT[i.period]}` : ''}` : '',
       renews: i.renews_on ? `Продовження ${CRM.date(i.renews_on, { day: 'numeric', month: 'short' })}` : '',
       grant: grantText(i),
@@ -84,10 +87,11 @@ CRM.module('access', async (root, CRM) => {
       if (notes) notes.hidden = !i.notes;
       // «Показати» — лише якщо доступ уже збережено (PM/admin); для інших — лише з чинним схваленим запитом
       const g = grantOf(i);
+      const open = g.active || !!i.is_shared; // спільний — як чинний дозвіл для всієї команди
       el.querySelectorAll('[data-action="access-reveal"]').forEach((b) => {
-        b.toggleAttribute('hidden', !i.secret_id || (b.hasAttribute('data-access-grant') ? isManager || !g.active : false));
+        b.toggleAttribute('hidden', !i.secret_id || (b.hasAttribute('data-access-grant') ? isManager || !open : false));
       });
-      el.querySelector('[data-action="access-request"]')?.toggleAttribute('hidden', isManager || !i.secret_id || g.active || g.pending);
+      el.querySelector('[data-action="access-request"]')?.toggleAttribute('hidden', isManager || !i.secret_id || open || g.pending);
       ['price', 'renews', 'grant'].forEach((k) => {
         const f = el.querySelector(`[data-field="${k}"]`);
         if (f) f.hidden = !f.textContent;
@@ -106,7 +110,7 @@ CRM.module('access', async (root, CRM) => {
     return { active: !!ok, until: ok?.expires_at, pending: rs.some((r) => r.status === 'pending') };
   }
   function grantText(i) {
-    if (isManager) return '';
+    if (isManager || i.is_shared) return '';
     const g = grantOf(i);
     if (g.active) return `Доступ до ${new Date(g.until).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
     return g.pending ? 'Запит надіслано' : '';
@@ -190,6 +194,14 @@ CRM.module('access', async (root, CRM) => {
     if (f.elements.currency) f.elements.currency.value = i?.currency || 'USD';
     if (f.elements.period) f.elements.period.value = i?.period || '';
     if (f.elements.renews_on) f.elements.renews_on.value = i?.renews_on || '';
+    // v0.17: «Спільний» — лише для PM/admin; чекбокс додаємо самі, якщо в Designer його немає
+    if (isManager && !f.elements.is_shared) {
+      const row = document.createElement('label');
+      row.className = 'check_field';
+      row.innerHTML = '<input type="checkbox" name="is_shared"> <span>Спільний акаунт — пароль бачить уся команда без запиту</span>';
+      (f.querySelector('.modal_body') || f).append(row);
+    }
+    if (f.elements.is_shared) f.elements.is_shared.checked = !!i?.is_shared;
     titleIn(m, i ? i.name : (tab === 'course' ? 'Новий курс' : 'Новий сервіс'));
     m.querySelector('[data-action="access-delete"]')?.toggleAttribute('hidden', !i);
   }
@@ -220,6 +232,10 @@ CRM.module('access', async (root, CRM) => {
       id = data.id;
     }
     const wasNew = !current;
+    if (isManager && 'is_shared' in d && !!d.is_shared !== !!current?.is_shared) {
+      const { error } = await sb.rpc('access_set_shared', { item: id, flag: !!d.is_shared });
+      if (error) throw error;
+    }
     modal.close();
     tab = row.kind;
     syncTab();

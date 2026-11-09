@@ -17,6 +17,8 @@ CRM.module('reviews', async (root, CRM) => {
   const me = CRM.user?.id;
   const isAD = !!CRM.profile?.is_art_director;
   const canDecide = isAD || can('admin');
+  // v0.19: розробник лише переглядає погодження (яку версію верстати), не надсилає нові
+  if (CRM.role === 'developer') document.querySelectorAll('[data-action="review-new"], [data-action="review-version"]').forEach((b) => b.remove());
   let rows = [];
   let tab = canDecide ? 'pending' : 'mine';
   let current = null;   // відкритий запит

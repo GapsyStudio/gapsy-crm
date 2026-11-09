@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.18.0
+ * Gapsy CRM · crm-core.js v0.19.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *

@@ -1,0 +1,6 @@
+  /* 14. v0.19 Хендофф: погоджена версія макета; нотатка → правка */
+  .ho_review { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; margin: 0.75rem 0 1rem; border-radius: 0.5rem; background: var(--background--subtle, #f4f4f4); }
+  .ho_review .list_title { font-weight: 500; }
+  .ho_review .button.is-text { margin-left: auto; }
+  .ho_review-wait { flex-basis: 100%; }
+  [data-action="note-to-feedback"][aria-disabled] { opacity: .5; pointer-events: none; }

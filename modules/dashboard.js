@@ -434,7 +434,7 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
   function drawLinks() {
     const list = root.querySelector('[data-list="home-links"]');
     if (!list) return;
-    const HINT = { '/cases': 'кейси за форматом і доменом', '/showcase': 'роботи студії', '/access': 'сервіси й паролі', '/docs': 'шаблони, відповіді, процеси', '/leave': 'відпустки й лікарняні' };
+    const HINT = { '/projects': 'проєкти з твоїх лідів', '/cases': 'кейси за форматом і доменом', '/showcase': 'свіжі роботи студії', '/access': 'сервіси й паролі', '/docs': 'шаблони, відповіді, процеси', '/leave': 'відпустки й лікарняні' };
     const rows = [...document.querySelectorAll('[data-nav]')]
       .map((a) => ({ title: a.textContent.trim(), url: a.getAttribute('href') }))
       .filter((r) => r.url && r.url !== '/app' && HINT[r.url]);

@@ -14,7 +14,10 @@
  *   Модуль сам додає у форму project-note select kind і поле link, а над списком — фільтр [data-notes-filter].
  *   У рядку: бейдж типу перед текстом і кнопка «Джерело ↗». «Вибір клієнта» завжди зверху після закріплених.
  * v0.18: секція #waits «Чекаємо від клієнта» перед нотатками (client_waits): що чекаємо, відколи, скільки днів;
- *   «Отримали» закриває пункт. Додає будь-хто з команди; закриває автор або PM/admin. Модуль будує секцію сам. */
+ *   «Отримали» закриває пункт. Додає будь-хто з команди; закриває автор або PM/admin. Модуль будує секцію сам.
+ * v0.19: у хендоффі рядок [data-ho-review] — остання погоджена версія макета (design_reviews) і те, що зараз на погодженні;
+ *   у нотатці кнопка «→ Правка» (дія note-to-feedback) створює правку з тексту й посилання нотатки;
+ *   Sales бачить проєкт без хендоффу, правок і сніпетів (RLS віддає їй лише проєкти з її лідів). */
 CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, toast, action, badge, time, date, name, crumbs, param, can }) => {
   const id = param('id');
   if (!id) return location.replace('/projects');
@@ -238,6 +241,12 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
         head.querySelector('[data-field="time"]')?.after(b);
         badge(b, kind, NOTE_KIND);
       }
+      if (CRM.role !== 'sales') {
+        const fb = document.createElement('a');
+        fb.href = '#'; fb.className = 'button is-text is-small'; fb.dataset.action = 'note-to-feedback';
+        fb.textContent = '→ Правка'; fb.title = 'Створити правку з цієї нотатки';
+        head.append(fb);
+      }
       if (n.link && /^https?:\/\//i.test(n.link)) {
         const a = document.createElement('a');
         a.className = 'button is-text is-small';
@@ -267,6 +276,21 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     loadNotes();
   });
 
+  // v0.19: нотатка → правка (заголовок = перший рядок, опис = увесь текст + джерело)
+  action('note-to-feedback', async (el) => {
+    const n = notes.find((x) => x.id === el.closest('[data-id]')?.dataset.id);
+    if (!n) return;
+    const first = n.body.split('\n').find((l) => l.trim()) || n.body;
+    const title = first.trim().slice(0, 120);
+    const description = [n.body.trim(), n.link ? `Джерело: ${n.link}` : ''].filter(Boolean).join('\n\n');
+    el.setAttribute('aria-disabled', 'true');
+    const { data, error } = await sb.from('feedback').insert({ title, description, project_id: id, priority: 'normal' }).select('id').single();
+    el.removeAttribute('aria-disabled');
+    if (error) return CRM.fail(error);
+    toast('Правку створено');
+    location.href = `/feedback-item?id=${data.id}`;
+  });
+
   action('note-delete', async (el) => {
     if (!confirm('Видалити нотатку?')) return;
     const { error } = await sb.from('project_notes').delete().eq('id', el.closest('[data-id]').dataset.id);
@@ -281,6 +305,36 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
   const hoBtn = (k) => root.querySelector(`[data-handoff-btn="${k}"]`);
   let items = DEFAULT_ITEMS.map((x) => ({ ...x }));
   const editable = () => !handoff || ['draft', 'returned'].includes(handoff.status);
+
+  // v0.19: яка версія макета погоджена — рядок над чеклістом хендоффу
+  async function loadReviewLine() {
+    const box = root.querySelector('[data-handoff]');
+    if (!box) return;
+    let line = box.querySelector('[data-ho-review]');
+    if (!line) {
+      line = document.createElement('div');
+      line.className = 'ho_review';
+      line.dataset.hoReview = '';
+      const after = box.querySelector('[data-handoff-hint]') || box.querySelector('.card_header');
+      if (after) after.after(line); else box.prepend(line);
+    }
+    const { data, error } = await sb.from('design_reviews').select('id, title, version, url, status, decided_at, created_at')
+      .eq('project_id', id).order('created_at', { ascending: false }).limit(20);
+    if (error) return console.warn('[CRM] design_reviews', error.message);
+    const ok = data.filter((r) => r.status === 'approved').sort((a, b) => String(b.decided_at || b.created_at).localeCompare(String(a.decided_at || a.created_at)))[0];
+    const wait = data.find((r) => r.status === 'pending');
+    const mk = (t, c, text) => { const e = document.createElement(t); if (c) e.className = c; if (text != null) e.textContent = text; return e; };
+    line.replaceChildren();
+    if (ok) {
+      line.append(mk('span', 'badge is-green', 'Погоджено'), mk('span', 'list_title', `${ok.title}${ok.version > 1 ? ` · v${ok.version}` : ''}`),
+        mk('span', 'list_meta', ok.decided_at ? date(ok.decided_at, { day: 'numeric', month: 'short' }) : ''));
+      if (safeUrl(ok.url)) { const a = mk('a', 'button is-text is-small', 'Відкрити макет ↗'); a.href = ok.url; a.target = '_blank'; a.rel = 'noopener'; line.append(a); }
+    } else {
+      line.append(mk('span', 'badge is-yellow', 'Не погоджено'), mk('span', 'list_meta', 'Погодженої версії макета ще немає'));
+      const a = mk('a', 'button is-text is-small', 'Погодження'); a.href = '/reviews'; line.append(a);
+    }
+    if (wait) line.append(mk('span', 'list_meta ho_review-wait', `на погодженні: ${wait.title}${wait.version > 1 ? ` v${wait.version}` : ''}`));
+  }
 
   async function loadHandoff() {
     const { data, error } = await sb.from('handoffs').select('*').eq('project_id', id).maybeSingle();
@@ -549,7 +603,12 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
 
   // =================================================================
   await loadProject();
-  await Promise.all([loadTeam(), loadNotes(), loadHandoff(), loadRelated()]);
+  // v0.19: Sales — лише огляд проєкту: без хендоффу, правок і сніпетів
+  if (CRM.role === 'sales') {
+    root.querySelector('[data-handoff]')?.setAttribute('hidden', '');
+    ['project-feedback', 'project-snippets'].forEach((k) => root.querySelector(`[data-list="${k}"]`)?.closest('section')?.setAttribute('hidden', ''));
+  }
+  await Promise.all([loadTeam(), loadNotes(), loadHandoff(), loadRelated(), CRM.role === 'sales' ? null : loadReviewLine()]);
   initChecklist();
   initWaits();
   loadWaits();

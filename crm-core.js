@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.17.0
+ * Gapsy CRM · crm-core.js v0.17.3
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -10,7 +10,7 @@
  *    модалки (data-modal + data-action="open:<key>" / "close"), таби (data-tabs/data-tab),
  *    тема (data-action="toggle-theme", data-theme-switch), toast-и, пошук Cmd+K,
  *    сповіщення з realtime; v0.16 закріплене (сторінки CRM і посилання) + зірочка «Закріпити сторінку»;
- *    v0.17 роль sales (входить у staff), CRM.homeRole() — під яку роль будувати Головну;
+ *    v0.17 роль sales (входить у staff), модуль cases (кейс-бібліотека Sales), CRM.homeRole() — під яку роль будувати Головну;
  *  - хелпери для модулів: CRM.render, CRM.fill, CRM.badge, CRM.onSubmit, CRM.action,
  *    CRM.dropzone, CRM.upload, CRM.signedUrls, CRM.options, CRM.time.
  *
@@ -25,7 +25,7 @@
   }
 
   // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
-  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'feedback', 'feedback-item', 'reviews', 'leave-balance', 'leave', 'onboarding', 'admin', 'profile'];
+  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'cases', 'feedback', 'feedback-item', 'reviews', 'leave-balance', 'leave', 'onboarding', 'admin', 'profile'];
   const STAFF = ['designer', 'developer', 'pm', 'sales', 'admin']; // v0.17: + sales
   const TEXT = {
     invalid: 'Невірний email або пароль',

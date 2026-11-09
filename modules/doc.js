@@ -186,7 +186,18 @@ CRM.module('doc', async (root, { sb, user, render, action, toast, time, date, na
           box.appendChild(row);
           break;
         }
-        case 'list': frag.appendChild(listEl(d.style, d.items, d.meta?.start, urls)); break;
+        case 'list': {
+          // v0.20.1: імпорт з Notion рве нумерований список абзацами («1. 1. 1.») — продовжуємо нумерацію,
+          // якщо попередній OL стоїть за 1–2 абзаци вище (без заголовка між ними)
+          let start = d.meta?.start;
+          if (d.style === 'ordered' && !start) {
+            let prev = frag.lastChild;
+            for (let k = 0; k < 2 && prev && prev.tagName === 'P'; k++) prev = prev.previousSibling;
+            if (prev && prev.tagName === 'OL') start = (prev.start || 1) + prev.children.length;
+          }
+          frag.appendChild(listEl(d.style, d.items, start, urls));
+          break;
+        }
         case 'checklist': {
           const ul = el('ul', null, 'doc_checklist');
           (d.items || []).forEach((it) => {

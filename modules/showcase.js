@@ -154,7 +154,16 @@ CRM.module('showcase', async (root, { sb, render, onSubmit, modal, toast, badge,
     const img = el.querySelector('[data-field-src]') || el.querySelector('img');
     if (img) {
       img.alt = i.title;
-      if (i.cover_url) { img.removeAttribute('srcset'); img.src = i.cover_url; }
+      // v0.20.1: без обкладинки — не «бита» картинка з alt, а плашка з доменом (стилі .crm-nocover у Head)
+      let ph = img.previousElementSibling?.classList.contains('crm-nocover') ? img.previousElementSibling : null;
+      if (i.cover_url) { img.removeAttribute('srcset'); img.src = i.cover_url; img.hidden = false; ph?.remove(); }
+      else {
+        let host = '';
+        try { host = new URL(i.url).hostname.replace(/^www\./, ''); } catch (e) { /* без url */ }
+        if (!ph) { ph = document.createElement('div'); ph.className = 'crm-nocover'; ph.setAttribute('aria-hidden', 'true'); img.before(ph); }
+        ph.textContent = host || i.title;
+        img.hidden = true;
+      }
     }
   }
 

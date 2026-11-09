@@ -1,0 +1,30 @@
+  /* 16. v0.20.1 дизайн-аудит: сітки без розпирання, рядки списків, порожні таблиці, обкладинки, дерево документів */
+  @keyframes crm-reveal16 { to { visibility: visible; } }
+  [data-element="project"]:not([data-ready]), [data-element="feedback-item"]:not([data-ready]) { visibility: hidden; animation: crm-reveal16 0s 4s forwards; }
+  @media (min-width: 992px) { .detail_layout { grid-template-columns: minmax(0, 1fr) 18rem; } }
+  @media (max-width: 991px) { .detail_layout { grid-template-columns: minmax(0, 1fr); } }
+  .detail_layout > *, .grid-2col > *, .grid-3col > * { min-width: 0; }
+  .comment_head { flex-wrap: wrap; row-gap: 0.25rem; }
+  .comments:not(:empty) { margin-bottom: 1rem; }
+  @media (hover: hover) {
+    .comment .comment_head > .button.is-text:not([target="_blank"]) { opacity: 0; transition: opacity .15s ease; }
+    .comment:hover .comment_head > .button.is-text, .comment:focus-within .comment_head > .button.is-text { opacity: 1; }
+  }
+  .card.is-facts .list_row, .card.is-facts .person { min-width: 0; }
+  .card.is-facts .person > div:not(.app_avatar) { min-width: 0; }
+  .card.is-facts [data-action="member-remove"] { margin-left: auto; flex: none; background: transparent; opacity: .45; }
+  .card.is-facts [data-action="member-remove"]:hover, .card.is-facts [data-action="member-remove"]:focus-visible { opacity: 1; }
+  .list_row .list_meta { min-width: 0; }
+  .list_row .list_title { min-width: 10rem; }
+  .list_row > .list_meta[data-field="project"], [data-home] .list_row > .list_meta[data-field="meta"] { flex: 0 1 auto; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-home] .list_row > .badge[data-field="kind"] { min-width: 6.25rem; justify-content: center; flex: none; }
+  [data-state="empty"] > .data_row.is-head { display: none; }
+  .ref_footer { flex-wrap: wrap; gap: 0.25rem 0.5rem; }
+  .ref_actions { flex-wrap: wrap; }
+  .card_header:has(> .mood_meta) { align-items: flex-start; }
+  .docs_sections { max-width: none; }
+  .docs_tree-link > [data-field="icon"] { display: inline-block; min-width: 1.25em; flex: none; text-align: center; }
+  .crm-nocover { aspect-ratio: 16 / 10; display: flex; align-items: center; justify-content: center; padding: 1rem; text-align: center; background: var(--background--secondary, #efefef); color: var(--text--secondary, #797979); font-size: 0.8125rem; border-radius: inherit; overflow-wrap: anywhere; }
+  [data-font-preview].is-fallback { opacity: .45; }
+  @media (prefers-reduced-motion: reduce) { .comment .comment_head > .button.is-text { transition: none; } }
+  @media (max-width: 767px) { .tabs_menu { overflow-x: auto; scrollbar-width: none; } .tabs_menu::-webkit-scrollbar { display: none; } .tabs_menu > .tabs_link { flex: none; } }

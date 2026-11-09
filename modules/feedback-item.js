@@ -32,6 +32,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   set('title', f.title);
   crumbs(`Правки / ${f.title}`);
   document.title = `${f.title} | Gapsy CRM`;
+  root.dataset.ready = '1'; // v0.20.1: до цього шаблонні «Назва…» сховані (стилі в Head)
   set('description', f.description || 'Без опису');
   set('project', f.project?.name || '—');
   set('author', name(f.author));
@@ -154,6 +155,9 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       }
       if (m.created_by !== user.id && !can('pm,admin')) el.querySelector('[data-action="mark-delete"]')?.remove();
     });
+    // v0.20.1: без скрінів секція «Позначки» — лише друга порожня плашка, ховаємо
+    const sec = root.querySelector('[data-list="marks"]')?.closest('section');
+    if (sec) sec.hidden = !shots.length && !marks.length;
   }
 
   function drawStage() {

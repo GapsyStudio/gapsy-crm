@@ -453,19 +453,24 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
   // =================================================================
   // ПОВʼЯЗАНЕ: правки, showcase, сніпети
   // =================================================================
+  let CATS = {};
   async function loadRelated() {
     const [fb, sc, sn] = await Promise.all([
       sb.from('feedback').select('id, title, status').eq('project_id', id).neq('status', 'resolved')
         .order('created_at', { ascending: false }).limit(8),
       sb.from('showcase_items').select('id, title, url, category').eq('project_id', id).order('created_at', { ascending: false }),
       sb.from('snippet_projects').select('snippet:snippets(id, title)').eq('project_id', id),
-    ]);
+      sb.from('showcase_categories').select('slug, label'),
+    ]).then((r) => { CATS = Object.fromEntries((r[3].data || []).map((c) => [c.slug, c.label])); return r; });
     if (fb.error) CRM.fail(fb.error);
     render('project-feedback', fb.data || [], (el, f) => {
       el.href = `/feedback-item?id=${f.id}`;
       badge(el.querySelector('[data-field="status"]'), f.status, FB_STATUS);
     });
-    render('project-showcase', sc.data || [], (el, s) => { if (safeUrl(s.url)) el.href = s.url; });
+    // v0.20.1: категорія — підписом з довідника (а не slug «site»)
+    render('project-showcase', (sc.data || []).map((s) => ({ ...s, category: CATS[s.category] || s.category })), (el, s) => {
+      if (safeUrl(s.url)) { el.href = s.url; el.target = '_blank'; el.rel = 'noopener'; }
+    });
     render('project-snippets', (sn.data || []).map((r) => r.snippet).filter(Boolean), (el, s) => { el.href = `/snippet?id=${s.id}`; });
   }
 
@@ -495,7 +500,13 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
         DATA.push(data); inp.value = ''; draw();
       });
     }
-    root.append(card);
+    // v0.20.1: чекліст — частина табу «Огляд» (раніше висів під усіма табами на всю ширину)
+    const overview = root.querySelector('[data-tab-panel="project:overview"]');
+    if (overview) {
+      card.dataset.tabPanel = 'project:overview';
+      card.hidden = overview.hidden;
+      overview.after(card);
+    } else root.append(card);
     function draw() {
       box.replaceChildren();
       const done = DATA.filter((x) => x.done).length;
@@ -545,10 +556,12 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     const list = mk('div', 'list waits_list');
     const form = mk('form', 'waits_form');
     form.dataset.form = 'client-wait';
-    form.innerHTML = '<input class="form-input" name="what" maxlength="300" required placeholder="Що чекаємо: тексти, доступи, фідбек по макету…" aria-label="Що чекаємо від клієнта">'
+    form.innerHTML = '<input class="form-input" name="what" maxlength="300" required placeholder="Що чекаємо від клієнта…" aria-label="Що чекаємо від клієнта">'
       + '<input class="form-input" name="since" type="date" aria-label="Відколи чекаємо">'
       + '<button class="button is-secondary is-small" type="submit">Додати</button>';
     sec.append(hd, list, form);
+    // v0.20.1: «Чекаємо від клієнта» — лише в табі «Огляд», як і нотатки
+    if (notesSec.dataset.tabPanel) { sec.dataset.tabPanel = notesSec.dataset.tabPanel; sec.hidden = notesSec.hidden; }
     notesSec.before(sec);
     form.elements.since.value = new Date().toLocaleDateString('sv');
   }
@@ -603,9 +616,12 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
 
   // =================================================================
   await loadProject();
+  root.dataset.ready = '1'; // v0.20.1: до цього шаблонні «НАЗВА ПРОЄКТУ / Клієнт / Дати не задані» сховані (Head)
   // v0.19: Sales — лише огляд проєкту: без хендоффу, правок і сніпетів
   if (CRM.role === 'sales') {
     root.querySelector('[data-handoff]')?.setAttribute('hidden', '');
+    // v0.20.1: таб-панелі перемикають hidden, тому ховаємо і самі таби
+    root.querySelectorAll('[data-tab="handoff-tab"], [data-tab="feedback"]').forEach((t) => t.remove());
     ['project-feedback', 'project-snippets'].forEach((k) => root.querySelector(`[data-list="${k}"]`)?.closest('section')?.setAttribute('hidden', ''));
   }
   await Promise.all([loadTeam(), loadNotes(), loadHandoff(), loadRelated(), CRM.role === 'sales' ? null : loadReviewLine()]);
@@ -613,5 +629,5 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
   initWaits();
   loadWaits();
   if (location.hash === '#handoff') root.querySelector('[data-handoff]')?.scrollIntoView({ block: 'start' });
-  if (location.hash === '#waits') root.querySelector('[data-waits]')?.scrollIntoView({ block: 'start' });
+  if (location.hash === '#waits') { CRM.showTab?.('project', 'overview'); root.querySelector('[data-waits]')?.scrollIntoView({ block: 'start' }); }
 });

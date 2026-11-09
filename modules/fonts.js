@@ -145,6 +145,9 @@ CRM.module('fonts', async (root, CRM) => {
       if (pv) {
         pv.dataset.fontPreviewId = f.id;
         if (loaded.has(f.id)) pv.style.fontFamily = `"${fontFamily(f.id)}", sans-serif`;
+        // v0.20.1: без файлів прев'ю показувало системний шрифт як «зразок» — приглушуємо і підписуємо
+        pv.classList.toggle('is-fallback', !(f.font_files || []).some((x) => /\.(woff2?|ttf|otf)$/i.test(x.filename)));
+        if (pv.classList.contains('is-fallback')) pv.title = 'Файлів шрифту немає — це системний шрифт';
       }
     });
     const problems = fonts.filter((f) => warning(f, projectNames(f).length)).length;

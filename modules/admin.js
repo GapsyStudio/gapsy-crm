@@ -6,6 +6,9 @@
  *   модалка data-modal="quiz-q" з формою data-form="quiz-q" (track, question, options — по рядку, ПЕРШИЙ рядок правильний, explanation, doc_id).
  * v0.13: поля hired_on (date), clickup_email, leave_vacation_hours, leave_sick_hours (порожньо = Time estimate задачі в ClickUp, якщо його немає — 120 / 40 + 8 за рік), чекбокс is_leave_approver → RPC admin_set_leave.
  * v0.12: чекбокс name="is_art_director" у формі user → RPC admin_set_art_director; у рядку поле [data-field="ad"] («Арт-директор»). */
+/* v0.20: угорі — картка [data-admin-health] «Налаштування агенції» (що не налаштовано і як виправити),
+ *   кнопки «Запросити в CRM» (копіює текст запрошення) і «Експорт бази» (JSON усіх таблиць, які бачить admin;
+ *   паролів у ньому немає — вони у Vault). Колонка «Останній вхід» перейменована на «Зареєстровано» (це дата реєстрації). */
 CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, action, name, time }) => {
   const ROLE = {
     pending: ['pending', 'is-yellow'], client: ['client', ''], designer: ['designer', 'is-blue'],
@@ -32,6 +35,7 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
     };
     render('users-pending', rows.filter((p) => p.role === 'pending'), fill);
     render('users', rows.filter((p) => p.role !== 'pending'), fill);
+    if (typeof loadHealth === 'function' && root.querySelector('[data-admin-health]')) loadHealth(); // v0.20: після зміни ролей
   }
 
   action('edit-user', (el) => {
@@ -219,6 +223,113 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
     loadQuestions();
   });
 
+  // =================================================================
+  // v0.20 НАЛАШТУВАННЯ АГЕНЦІЇ, ЗАПРОШЕННЯ, ЕКСПОРТ
+  // =================================================================
+  const mk = (t, c, text) => { const e = document.createElement(t); if (c) e.className = c; if (text != null) e.textContent = text; return e; };
+  // «Останній вхід» показував дату реєстрації — називаємо чесно
+  root.querySelectorAll('*').forEach((el) => { if (!el.children.length && el.textContent.trim() === 'Останній вхід') el.textContent = 'Зареєстровано'; });
+
+  const EXPORT_KEY = 'crm-last-export';
+  const TABLES = ['profiles', 'projects', 'project_members', 'project_notes', 'project_checklist', 'client_waits', 'handoffs',
+    'feedback', 'feedback_comments', 'feedback_marks', 'feedback_files', 'design_reviews', 'docs', 'snippets', 'snippet_projects',
+    'fonts', 'font_files', 'font_projects', 'moodboard_items', 'inspo_links', 'showcase_items', 'showcase_categories',
+    'access_items', 'access_requests', 'access_log', 'leave_requests', 'leave_balances', 'company_holidays',
+    'leads', 'sales_templates', 'price_items', 'case_items', 'case_tags', 'case_item_tags', 'quiz_questions', 'role_requests'];
+
+  const health = mk('section', 'card admin_health');
+  health.dataset.adminHealth = '';
+  const hh = mk('div', 'card_header');
+  hh.append(mk('div', 'card_title', 'Налаштування агенції'));
+  const tools = mk('div', 'home_tools');
+  const inv = mk('a', 'button is-secondary is-small', 'Запросити в CRM'); inv.href = '#'; inv.dataset.action = 'admin-invite';
+  const exp = mk('a', 'button is-small', 'Експорт бази'); exp.href = '#'; exp.dataset.action = 'admin-export';
+  tools.append(inv, exp);
+  hh.append(tools);
+  const hl = mk('div', 'list');
+  health.append(hh, hl);
+  const firstSection = root.querySelector('.page_header');
+  if (firstSection) firstSection.after(health); else root.prepend(health);
+
+  async function loadHealth() {
+    const count = async (t, f = (q) => q) => { const r = await f(sb.from(t).select('id', { count: 'exact', head: true })); return r.error ? null : r.count; };
+    const { data: ppl } = await sb.from('profiles').select('email, role, is_art_director, is_leave_approver, clickup_email')
+      .in('role', ['designer', 'developer', 'pm', 'sales', 'admin']);
+    const team = ppl || [];
+    const admins = team.filter((p) => p.role === 'admin');
+    const sharedAdmin = admins.filter((p) => /^(info|hello|office|team|studio|admin)@/i.test(p.email || ''));
+    const [acc, accSecret, prices, tpls, active] = await Promise.all([
+      count('access_items'), count('access_items', (q) => q.not('secret_id', 'is', null)), count('price_items'), count('sales_templates'),
+      count('projects', (q) => q.eq('status', 'active')),
+    ]);
+    let last = null;
+    try { last = localStorage.getItem(EXPORT_KEY); } catch (e) {}
+    const days = last ? Math.floor((Date.now() - Number(last)) / 864e5) : null;
+    // [ok, що, як виправити]
+    const rows = [
+      [team.some((p) => p.is_art_director), 'Арт-директор призначений', 'Без нього погоджувати дизайн може лише admin. Користувачі → Змінити → «Арт-директор».'],
+      [team.some((p) => p.is_leave_approver), 'Є хто погоджує відпустки', 'Інакше запити на відпустку бачить лише admin. Користувачі → Змінити → «Погоджує відпустки».'],
+      [admins.length <= 2, `Адмінів: ${admins.length}`, 'Лиши 1–2 особисті акаунти admin, решті — їхню робочу роль.'],
+      [!sharedAdmin.length, sharedAdmin.length ? `Спільний акаунт з правами admin: ${sharedAdmin.map((p) => p.email).join(', ')}` : 'Спільні акаунти без прав admin', 'Дії зі спільного акаунта в журналі не прив’язані до людини. Зміни йому роль або видали.'],
+      [active == null || active > 1, `Активних проєктів у CRM: ${active ?? '—'}`, 'Заведи всі поточні проєкти — інакше Головна й «Пульс» порожні й команда йде в Slack.'],
+      [acc == null || !acc || accSecret / acc >= 0.5, `Доступи з паролем: ${accSecret ?? '—'} з ${acc ?? '—'}`, 'Додай паролі до сервісів у «Доступах», спільні — позначай «Спільний».'],
+      [!!prices, prices ? `Довідник цін: ${prices} позицій` : 'Довідник цін порожній', 'Кейси → Ціни → «+ Позиція». Без нього Sales і PM називають різні цифри.'],
+      [!!tpls, tpls ? `Шаблонів відповідей: ${tpls}` : 'Шаблонів відповідей немає', 'Кейси → Шаблони й відповіді → «+ Шаблон» (3–5 типових відповідей).'],
+      [days != null && days <= 7, days == null ? 'Експорту бази ще не було' : `Останній експорт: ${days} дн. тому`, 'Безкоштовний тариф Supabase без автобекапів: раз на тиждень натискай «Експорт бази» й зберігай файл у закритій папці (не в GitHub).'],
+    ];
+    const ok = rows.filter((r) => r[0]).length;
+    hh.querySelector('.card_title').textContent = `Налаштування агенції · ${ok} з ${rows.length}`;
+    hl.replaceChildren(...rows.sort((a, b) => a[0] - b[0]).map(([good, what, fix]) => {
+      const r = mk('div', `list_row admin_health-row${good ? ' is-ok' : ''}`);
+      r.append(mk('span', `badge ${good ? 'is-green' : 'is-yellow'}`, good ? 'Готово' : 'Зробити'));
+      const t = mk('div', 'person_text');
+      t.append(mk('span', 'list_title', what));
+      if (!good) t.append(mk('span', 'list_meta', fix));
+      r.append(t);
+      return r;
+    }));
+  }
+
+  action('admin-invite', async () => {
+    const text = `Привіт! Це наша CRM Gapsy: ${location.origin}/login\nУвійди через Google робочою поштою, пройди короткий онбординг і надішли запит на роль — я підтверджу.`;
+    try { await navigator.clipboard.writeText(text); toast('Текст запрошення скопійовано — надішли людині'); } catch (e) { prompt('Скопіюй текст запрошення:', text); }
+  });
+
+  action('admin-export', async (el) => {
+    el.setAttribute('aria-disabled', 'true');
+    const prev = el.textContent;
+    const out = { exported_at: new Date().toISOString(), by: user?.email || null, note: 'Gapsy CRM export. Паролів немає (Vault). Містить персональні дані — не викладати в GitHub.', tables: {}, errors: {} };
+    try {
+      for (const [i, t] of TABLES.entries()) {
+        el.textContent = `Експорт ${i + 1}/${TABLES.length}…`;
+        const rows = [];
+        for (let from = 0; from < 50000; from += 1000) {
+          const { data, error } = await sb.from(t).select('*').range(from, from + 999);
+          if (error) { out.errors[t] = error.message; break; }
+          rows.push(...data);
+          if (data.length < 1000) break;
+        }
+        if (!out.errors[t]) out.tables[t] = rows;
+      }
+      const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `gapsy-crm-${new Date().toLocaleDateString('sv')}.json`;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      try { localStorage.setItem(EXPORT_KEY, String(Date.now())); } catch (e) {}
+      const n = Object.values(out.tables).reduce((s, r) => s + r.length, 0);
+      toast(`Експортовано ${n} рядків з ${Object.keys(out.tables).length} таблиць`);
+      loadHealth();
+    } catch (e) {
+      CRM.fail(e);
+    } finally {
+      el.textContent = prev;
+      el.removeAttribute('aria-disabled');
+    }
+  });
+
+  loadHealth();
   loadRequests();
   if (root.querySelector('[data-list="quiz-questions"]')) loadQuestions();
 });

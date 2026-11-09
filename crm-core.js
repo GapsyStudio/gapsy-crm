@@ -1,5 +1,5 @@
 /* =====================================================================
- * Gapsy CRM · crm-core.js v0.19.0
+ * Gapsy CRM · crm-core.js v0.20.0
  * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
  * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
  *
@@ -11,6 +11,7 @@
  *    тема (data-action="toggle-theme", data-theme-switch), toast-и, пошук Cmd+K,
  *    сповіщення з realtime; v0.16 закріплене (сторінки CRM і посилання) + зірочка «Закріпити сторінку»;
  *    v0.17 роль sales (входить у staff), модуль cases (кейс-бібліотека Sales), CRM.homeRole() — під яку роль будувати Головну;
+ *    v0.20 меню: групи згортаються (стан у localStorage 'crm-nav-closed'), «Моя робота» злита з Головною, Онбординг ховається через 30 днів;
  *  - хелпери для модулів: CRM.render, CRM.fill, CRM.badge, CRM.onSubmit, CRM.action,
  *    CRM.dropzone, CRM.upload, CRM.signedUrls, CRM.options, CRM.time.
  *
@@ -489,6 +490,7 @@
       $$('.app_nav-group').forEach((g) => { g.hidden = true; });
     }
     CRM.bindUser();
+    tidyNav();
     // активний пункт меню
     const path = location.pathname.replace(/\/$/, '') || '/';
     $$('[data-nav]').forEach((a) => {
@@ -503,6 +505,55 @@
     const h1 = $('[data-page-content] h1');
     if (h1) CRM.crumbs(h1.textContent.trim());
   }
+  /**
+   * v0.20 Меню коротше:
+   *  - «Моя робота» прибрано (її зміст — на Головній: «Сьогодні», «Мої проєкти», «Мої правки»); сторінка /my-work лишається за посиланням;
+   *  - Онбординг ховається для команди, що зареєструвалась понад 30 днів тому (новачкам і поточній сторінці — видно);
+   *  - заголовки груп (.app_nav-group) згортають свої пункти; група з активною сторінкою завжди відкрита;
+   *    за замовчуванням відкриті «Робота» й активна група; вибір людини пам'ятаємо в localStorage 'crm-nav-closed'.
+   */
+  function tidyNav() {
+    const nav = $('.app_nav');
+    if (!nav) return;
+    const path = location.pathname.replace(/\/$/, '') || '/';
+    const onPath = (a) => a.dataset.nav.split(',').map((x) => x.trim()).includes(path);
+    $$('.app_nav [data-nav]').forEach((a) => {
+      const href = a.getAttribute('href');
+      if (href === '/my-work' && !onPath(a)) a.remove();
+      if (href === '/onboarding' && CRM.role !== 'pending' && !onPath(a)
+          && CRM.profile?.created_at && Date.now() - new Date(CRM.profile.created_at) > 30 * 864e5) a.remove();
+    });
+    if (CRM.role === 'pending') return;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('crm-nav-closed') || 'null'); } catch (e) {}
+    const groups = $$('.app_nav-group').filter((g) => !g.hidden);
+    groups.forEach((g, i) => {
+      const links = [];
+      for (let n = g.nextElementSibling; n && !n.classList.contains('app_nav-group'); n = n.nextElementSibling) if (n.matches('[data-nav]')) links.push(n);
+      if (!links.length) { g.hidden = true; return; }
+      const name = g.textContent.trim();
+      const active = links.some(onPath);
+      const closed = !active && (saved ? saved.includes(name) : i > 0);
+      g.setAttribute('role', 'button');
+      g.tabIndex = 0;
+      g.classList.add('is-collapsible');
+      const apply = (shut) => {
+        g.setAttribute('aria-expanded', String(!shut));
+        g.classList.toggle('is-closed', shut);
+        links.forEach((l) => { l.hidden = shut; });
+      };
+      apply(closed);
+      const toggle = () => {
+        const shut = g.getAttribute('aria-expanded') === 'true';
+        apply(shut);
+        const list = groups.filter((x) => x.classList.contains('is-closed')).map((x) => x.textContent.trim());
+        try { localStorage.setItem('crm-nav-closed', JSON.stringify(list)); } catch (e) {}
+      };
+      g.addEventListener('click', toggle);
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    });
+  }
+
   /** Хлібні крихти: рядок або масив [[текст, href], …, [поточна]] — тоді попередні рівні клікабельні. */
   CRM.crumbs = (items) => {
     const c = $('[data-crm-crumbs]');

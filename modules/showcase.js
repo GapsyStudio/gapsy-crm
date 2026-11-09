@@ -11,6 +11,13 @@
  *   select name="category" у формі заповнюється з довідника. Модалка data-modal="showcase-cats" (кнопка open:showcase-cats, PM/admin):
  *   список data-list="showcase-cats" (поля label — бейдж, count; дії cat-rename, cat-color, cat-delete) і форма data-form="showcase-cat" (label). */
 CRM.module('showcase', async (root, { sb, render, onSubmit, modal, toast, badge, action, dropzone, upload, signedUrls, options, can, name }) => {
+  // v0.20: Showcase — свіжі роботи; оформлені кейси для пропозицій — у «Кейсах» (Sales, PM, admin)
+  if (can('sales,pm,admin') && !root.querySelector('[data-to-cases]')) {
+    const a = document.createElement('a');
+    a.href = '/cases'; a.className = 'button is-text is-small'; a.dataset.toCases = ''; a.textContent = 'Кейси для пропозицій →';
+    const actions = root.querySelector('.page_header .page_actions');
+    if (actions) actions.prepend(a); else root.querySelector('.page_header')?.append(a);
+  }
   const isManager = can('pm,admin');
   const STATUS = { proposed: ['На розгляді', 'is-yellow'], rejected: ['Відхилено', 'is-red'] };
   let proposing = false; // модалка відкрита як «Запропонувати»

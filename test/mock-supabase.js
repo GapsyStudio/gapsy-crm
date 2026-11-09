@@ -79,7 +79,7 @@ function builder(table) {
   const st = { table, single: false, filters: [] };
   const b = {
     select() { return b; }, eq(k, v) { st.filters.push([k, v]); return b; }, neq() { return b; }, or() { return b; }, order() { return b; },
-    limit() { return b; }, in() { return b; }, is() { return b; }, not() { return b; }, gte() { return b; }, gte() { return b; }, lte() { return b; }, gt() { return b; },
+    limit() { return b; }, range() { return b; }, in() { return b; }, is() { return b; }, not() { return b; }, gte() { return b; }, gte() { return b; }, lte() { return b; }, gt() { return b; },
     single() { st.single = true; return b; }, maybeSingle() { st.single = true; return b; },
     insert(row) { window.__calls.push(['insert', table, row]); st.insert = row; return b; },
     update(row) { window.__calls.push(['update', table, row]); st.update = row; return b; },

@@ -50,6 +50,9 @@ CRM.module('cases', (root, { sb, crumbs, toast, can, param, modal, onSubmit, act
     });
     Object.entries(panes).forEach(([key, p]) => { p.hidden = key !== tab; });
     hact.replaceChildren();
+    if (tab === 'cases' && document.querySelector('.app_nav [data-nav="/showcase"]')) {
+      const sc = el('a', 'button is-text is-small', 'Свіжі роботи · Showcase'); sc.href = '/showcase'; hact.append(sc); // v0.20
+    }
     if (tab === 'templates') {
       const add = el('a', 'button is-small', '+ Шаблон'); add.href = '#'; add.dataset.action = 'tpl-new'; hact.append(add);
     }

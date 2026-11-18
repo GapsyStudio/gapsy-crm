@@ -10,7 +10,7 @@
  *   Модуль сам додає картки (класи з Designer: card, card_header, card_title, list, list_row, badge, list_title, list_meta):
  *     [data-home="today"]    «Сьогодні» для всіх: нагадування, правки з терміном, хендоффи, погодження, відпустки, ліди, ClickUp;
  *                            форма data-form="reminder" (title, due_on), дії reminder-done, open-reminder;
- *     [data-home="tasks"]    «Мої задачі в ClickUp» (Edge Function my-tasks, лише перегляд);
+ *     [data-home="tasks"]    «Мої задачі в ClickUp» — v0.24: вимкнено (немає в ORDER), код лишається на випадок повернення;
  *     [data-home="projects"] «Мої проєкти» (designer, art, developer);
  *     [data-home="reviews"]  «Чекають погодження» (art, admin);
  *     [data-home="leads"]    Sales: «Мої ліди» + модалка data-modal="lead" (форма data-form="lead"); PM/admin: «Ліди від Sales» (дії lead-take, lead-decline);
@@ -74,13 +74,15 @@ CRM.module('dashboard', (root, { sb, user, render, onSubmit, modal, toast, badge
   };
 
   // Порядок блоків на Головній під роль. Блоки, яких немає в списку ролі, ховаються.
+  // v0.24: задачі з ClickUp на Головній вимкнено (не дублюємо ClickUp) — блоку 'tasks' немає в жодній ролі,
+  // тож Edge Function my-tasks не викликається і в «Сьогодні» немає рядків ClickUp. Баланс відпусток з ClickUp — без змін.
   const ORDER = {
-    designer:  ['today', 'tasks', 'projects', 'work', 'pins', 'balance'],
-    art:       ['today', 'reviews', 'tasks', 'projects', 'work', 'pins', 'balance'],
-    developer: ['today', 'tasks', 'projects', 'work', 'pins', 'balance'],
-    pm:        ['today', 'leads', 'pulse', 'tasks', 'work', 'pins', 'balance'],
-    sales:     ['today', 'leads', 'pins', 'links', 'tasks', 'balance'],
-    admin:     ['today', 'pulse', 'reviews', 'leads', 'tasks', 'pins', 'work', 'balance'],
+    designer:  ['today', 'projects', 'work', 'pins', 'balance'],
+    art:       ['today', 'reviews', 'projects', 'work', 'pins', 'balance'],
+    developer: ['today', 'projects', 'work', 'pins', 'balance'],
+    pm:        ['today', 'leads', 'pulse', 'work', 'pins', 'balance'],
+    sales:     ['today', 'leads', 'pins', 'links', 'balance'],
+    admin:     ['today', 'pulse', 'reviews', 'leads', 'pins', 'work', 'balance'],
   };
   const order = ORDER[ROLE_HOME] || (can('staff') ? ORDER.designer : ['work', 'pins']);
   const make = {

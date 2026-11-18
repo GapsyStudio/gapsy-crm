@@ -79,8 +79,7 @@ const D = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('sv');
   p = await open('/app', 'sales');
   console.log('\nsales leads:', JSON.stringify(await p.$$eval('[data-list="home-leads"] > [data-rendered]', (x) => x.map((e) => e.textContent.replace(/\s+/g, ' ')))));
   console.log('cases link:', await p.$eval('[data-list="home-leads"] > [data-rendered] a.button', (e) => e.getAttribute('href')));
-  await p.click('[data-list="home-leads"] > [data-rendered] [data-action="lead-remind"]'); await p.waitForTimeout(300);
-  console.log('remind:', JSON.stringify(await p.evaluate(() => window.__calls.filter((c) => c[1] === 'reminders' && c[0] === 'insert').map((c) => c[2]))));
+  console.log('v0.25 no «Нагадати»:', !(await p.$('[data-action="lead-remind"]')));
   await p.click('[data-action="open:lead"]'); await p.fill('#lead-title', 'X'); await p.click('[data-form="lead"] [type="submit"]'); await p.waitForTimeout(400);
   console.log('one add button after submit:', await p.$$eval('[data-action="open:lead"]', (x) => x.length));
   await p.context().close();
@@ -89,7 +88,8 @@ const D = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('sv');
   p = await open('/app', 'pm');
   console.log('\nwaits:', JSON.stringify(await p.$$eval('[data-list="home-waits"] > [data-rendered]', (x) => x.map((e) => e.textContent.replace(/\s+/g, ' ')))), '| red:', await p.$eval('[data-list="home-waits"] [data-field="meta"]', (e) => e.classList.contains('is-red')));
   console.log('today:', JSON.stringify(await p.$$eval('[data-list="home-today"] > [data-rendered]', (x) => x.map((e) => e.textContent.replace(/\s+/g, ' ')))));
-  console.log('workload:', JSON.stringify(await p.$$eval('[data-list="workload"] > [data-rendered]', (x) => x.map((e) => e.textContent.replace(/\s+/g, ' ')).slice(0, 2))));
+  console.log('v0.25 workload/risk not rendered:', await p.$$eval('[data-list="workload"] > [data-rendered], [data-list="pulse-risk"] > [data-rendered]', (x) => x.length) === 0,
+    '| no team_absences rpc:', await p.evaluate(() => !window.__calls.some((c) => c[1] === 'team_absences')));
   await p.context().close();
 
   // --- проєкт: очікування

@@ -77,12 +77,7 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     set('prefix', data.prefix || '—');
     $('[data-item="prefix"]')?.classList.toggle('is-empty', !data.prefix); // v0.15.2: порожній префікс — просто текст, без рамки чипа
     badge($('[data-item="status"]'), data.status, STATUS);
-    badge($('[data-item="stage"]'), data.stage || 'design', CRM.STAGE);
-    const short = (d) => date(d, { day: 'numeric', month: 'short' });
-    set('dates', [data.stage_due && `Етап до ${short(data.stage_due)}`, data.deadline && `Запуск ${short(data.deadline)}`].filter(Boolean).join(' · ') || 'Дати не задані');
-    const riskEl = $('[data-item="risk"]');
-    const risk = CRM.projectRisk(data);
-    if (riskEl) { riskEl.hidden = !risk; if (risk) badge(riskEl, 'r', { r: [risk.text, risk.combo] }); }
+    // v0.25: етап, дати й ризик не показуємо (планування — у ClickUp); елементи ховає блок 20 стилів
     crumbs(`Проєкти / ${data.name}`);
     document.title = `${data.name} | Gapsy CRM`;
 
@@ -98,7 +93,7 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
     const form = m?.querySelector('[data-form="project-edit"]');
     if (!form || !project) return;
     CRM.fillSelects(m).then(() => {
-      ['name', 'client', 'status', 'stage', 'stage_due', 'deadline', 'prefix', 'summary', ...LINKS.map(([k]) => k)].forEach((k) => {
+      ['name', 'client', 'status', 'prefix', 'summary', ...LINKS.map(([k]) => k)].forEach((k) => {
         if (form.elements[k]) form.elements[k].value = project[k] || '';
       });
     });
@@ -117,9 +112,6 @@ CRM.module('project', async (root, { sb, user, render, fill, onSubmit, modal, to
       name: d.name.trim(), client: orNull(d.client), status: d.status,
       prefix: orNull(d.prefix), summary: orNull(d.summary), stack: list(d.stack),
     };
-    if ('stage' in d) row.stage = d.stage || 'design';
-    if ('stage_due' in d) row.stage_due = d.stage_due || null;
-    if ('deadline' in d) row.deadline = d.deadline || null;
     LINKS.forEach(([k]) => { row[k] = orNull(d[k]); });
     const { error } = await sb.from('projects').update(row).eq('id', id);
     if (error) throw error;

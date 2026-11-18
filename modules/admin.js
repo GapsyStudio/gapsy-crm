@@ -24,7 +24,7 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
     if (error) return CRM.fail(error);
     people = data;
     const rows = data.map((p) => ({
-      ...p, name: name(p), clickup: p.clickup_task_id || '—', last_sign_in: time(p.created_at),
+      ...p, name: name(p), last_sign_in: time(p.created_at),
       ad: [p.is_art_director && 'Арт-директор', p.is_leave_approver && 'Погоджує відпустки'].filter(Boolean).join(' · '),
     }));
     const fill = (el, p) => {
@@ -53,7 +53,6 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
       roleSel.insertBefore(o, roleSel.querySelector('option[value="admin"]'));
     }
     f.elements.role.value = p.role === 'pending' ? 'designer' : p.role;
-    f.elements.clickup_task_id.value = p.clickup_task_id || '';
     if (f.elements.is_art_director) f.elements.is_art_director.checked = !!p.is_art_director;
     // v0.13 відпустки
     const set = (k, v) => { if (f.elements[k]) f.elements[k].value = v ?? ''; };
@@ -64,7 +63,9 @@ CRM.module('admin', (root, { sb, user, render, onSubmit, modal, toast, badge, ac
 
   onSubmit('user', async (d, f) => {
     if (editId === user.id && d.role !== 'admin' && !confirm('Ти знімаєш з себе роль admin. Продовжити?')) return;
-    const { error } = await sb.rpc('admin_update_user', { user_id: editId, new_role: d.role, clickup: d.clickup_task_id || '' });
+    // v0.25: поле «ClickUp task id» прибрано (відпустки шукають людину за поштою). Передаємо збережене значення, щоб RPC його не стер.
+    const keep = people.find((x) => x.id === editId)?.clickup_task_id || '';
+    const { error } = await sb.rpc('admin_update_user', { user_id: editId, new_role: d.role, clickup: keep });
     if (error) throw error;
     const p = people.find((x) => x.id === editId);
     const ad = !!d.is_art_director;

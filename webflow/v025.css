@@ -1,0 +1,15 @@
+  /* 20 · v0.25: без планування проєктів, нагадувань і ClickUp task id (не дублюємо ClickUp). Елементи лишились у Designer — їх можна видалити там, тоді цей блок не потрібен */
+  .pulse_stat:has([data-pulse-count="risk"]),
+  [data-pulse] .grid-2col:has([data-list="pulse-risk"]),
+  .meta_group:has([data-item="stage"]),
+  [data-list="projects"] [data-field="stage"],
+  [data-list="projects"] [data-field="due"],
+  [data-list="projects"] [data-field="risk"],
+  .form_field:has([name="stage"]),
+  .form_field:has([name="stage_due"]),
+  .form_field:has([name="deadline"]):not(:has(#lead-deadline)),
+  .form_row:has([name="stage"]):not(:has([name="status"])),
+  .data_row.is-users > [data-field="clickup"],
+  .data_row.is-head.is-users > :nth-child(3),
+  .form_field:has([name="clickup_task_id"]) { display: none !important; }
+  .pm_row { grid-template-columns: minmax(12rem, 2fr) 7rem 7rem 6.5rem minmax(6rem, 1fr); min-width: 44rem; }

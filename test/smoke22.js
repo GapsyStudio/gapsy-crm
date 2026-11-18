@@ -38,15 +38,11 @@ const D = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString('sv');
     await p.context().close();
   }
 
-  // нагадування: додати / виконати
+  // v0.25: нагадувань немає — ні форми, ні кнопки, ні запитів до reminders; немає рядків «Етап» у «Сьогодні»
   let p = await open('/app', 'developer');
-  console.log('\nreminder form hidden:', await p.$eval('[data-form="reminder"]', (f) => f.hidden));
-  await p.click('[data-action="open-reminder"]');
-  console.log('date default today:', (await p.$eval('[name="due_on"]', (e) => e.value)) === D(0));
-  await p.fill('[data-form="reminder"] [name="title"]', 'Відписати Ксенії');
-  await p.click('[data-form="reminder"] button[type="submit"]'); await p.waitForTimeout(300);
-  await p.click('[data-list="home-today"] > [data-rendered] [data-action="reminder-done"]'); await p.waitForTimeout(300);
-  console.log('calls:', JSON.stringify(await p.evaluate(() => window.__calls.filter((c) => c[1] === 'reminders').map((c) => [c[0], Object.keys(c[2] || {}).join(',')]))));
+  console.log('\nno reminder form/button:', !(await p.$('[data-form="reminder"]')) && !(await p.$('[data-action="open-reminder"]')),
+    '| reminders not queried:', await p.evaluate(() => !window.__calls.some((c) => c[1] === 'reminders')),
+    '| no reminder/stage rows:', !(await rows(p, 'home-today')).some((r) => /Нагадування|Подзвонити|Етап/.test(r)));
   // v0.24: задач ClickUp на Головній немає, Edge Function my-tasks не викликається
   console.log('no tasks block:', !(await p.$('[data-home="tasks"]')), '| my-tasks not called:', await p.evaluate(() => !window.__calls.some((c) => c[1] === 'my-tasks' || c[2] === 'my-tasks')), '| no ClickUp in today:', !(await rows(p, 'home-today')).some((r) => /ClickUp/.test(r)));
   console.log('projects:', JSON.stringify(await rows(p, 'home-projects')));

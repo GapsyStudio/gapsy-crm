@@ -1,5 +1,6 @@
 // Смоук v0.21: ревʼю за посиланням. CRM на :8765, «сайт» з review-bridge.js на :8766 (інший origin).
 const { chromium } = require('playwright');
+const CSS = ['../webflow/v021.css', '../webflow/v022.css'].map((f) => require('fs').readFileSync(require('path').join(__dirname, f), 'utf8')).join('\n') + '[hidden]{display:none!important}';
 (async () => {
   const b = await chromium.launch(); const errs = [];
   const open = async (url, fix = {}, vw = 1440, host = 'localhost') => {
@@ -8,7 +9,7 @@ const { chromium } = require('playwright');
     const p = await ctx.newPage();
     p.on('pageerror', (e) => errs.push(`${url}: ${e.message}`));
     p.on('console', (m) => { if (m.type() === 'error' && !/review_width/.test(m.text())) errs.push(`${url}: ${m.text()}`); });
-    await p.goto(`http://${host}:8765${url}`); await p.waitForTimeout(1200);
+    await p.goto(`http://${host}:8765${url}`); await p.addStyleTag({ content: CSS }); await p.waitForTimeout(1200);
     return p;
   };
   const F = (extra = {}) => ({ feedback: [{ id: 'f1', title: 'Кнопка в хедері', status: 'new', priority: 'normal', due_date: null, created_at: new Date().toISOString(), author_id: 'u1', assignee_id: null, project: { id: 'p1', name: 'CloudVno' }, author: { full_name: 'Нелія' }, assignee: null, page_url: 'http://localhost:8766/landing', review_width: 1440, ...extra }],

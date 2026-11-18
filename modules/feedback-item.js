@@ -13,7 +13,10 @@
  * v0.21: «Ревʼю за посиланням» — картка «Жива сторінка» (будує JS, перед скрінами) і повноекранний режим ревʼю:
  *   сторінка з feedback.page_url у iframe (?crm-review=1), ліворуч піни, Коментувати / Переглядати, ширини 1440 / 768 / 390.
  *   Піни на сайті малює review-bridge.js (має стояти у Footer сайту); зберігаються у feedback_marks з file_id = null і anchor {w, py, dh}.
- *   Відкрити одразу: /feedback-item?id=…#review. Потрібна міграція 023_url_review. Стилі — блок 17 у Head. */
+ *   Відкрити одразу: /feedback-item?id=…#review. Потрібна міграція 023_url_review. Стилі — блок 17 у Head.
+ * v0.22: скріни до пінів (таблиця feedback_mark_files, міграція 024): у формі нового піна — вставити (⌘V, напр. з Figma
+ *   Shift+⌘+C), перетягнути або вибрати файл; до наявного піна — «+ Скрін» або перетягнути на рядок. Мініатюри в списках,
+ *   клік — перегляд на весь екран. Картинки зменшуються до 2400 px перед завантаженням. Стилі — блок 18 у Head. */
 CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, toast, action, signedUrls, time, date, name, crumbs, param, can, badge, due, PRIORITY, FEEDBACK_STATUS }) => {
   const id = param('id');
   const $ = (s) => root.querySelector(s);
@@ -107,6 +110,186 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   const shots = (files || []).map((x, i) => ({ ...x, url: urls[x.path] || '', n: i + 1 }));
   let marks = [];
 
+  // =================================================================
+  // v0.22 СКРІНИ ДО ПІНІВ (feedback_mark_files) — спільне для пінів на сторінці й на скрінах
+  // =================================================================
+  const pinFiles = (() => {
+    const MAX = 6;
+    const MAXPX = 2400;
+    const MAXMB = 15;
+    let byMark = {};    // mark_id → [{id, path, url, created_by}]
+    let ready = true;   // false, якщо міграції 024 ще немає
+    const el = (t, c, text) => { const e = document.createElement(t); if (c) e.className = c; if (text != null) e.textContent = text; return e; };
+    const isImg = (f) => /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
+
+    // Великі PNG із Figma (2×, 4000+ px) зменшуємо до 2400 px по довшій стороні; маленькі — як є
+    async function shrink(file) {
+      if (!/^image\/(png|jpe?g|webp)$/i.test(file.type) || !window.createImageBitmap) return file;
+      try {
+        const bmp = await createImageBitmap(file);
+        const k = Math.min(1, MAXPX / Math.max(bmp.width, bmp.height));
+        if (k === 1 && file.size < 3 * 1048576) { bmp.close?.(); return file; }
+        const c = document.createElement('canvas');
+        c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        bmp.close?.();
+        const type = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/webp';
+        const blob = await new Promise((r) => c.toBlob(r, type, 0.9));
+        if (!blob || blob.size >= file.size) return file;
+        const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
+        return new File([blob], `pin.${ext}`, { type: blob.type });
+      } catch (e) { return file; }
+    }
+
+    async function load() {
+      const { data, error: err } = await sb.from('feedback_mark_files').select('id, mark_id, path, created_by, created_at').eq('feedback_id', id).order('created_at');
+      if (err) { ready = false; byMark = {}; return; } // до міграції 024 — просто без скрінів
+      ready = true;
+      const urls = await signedUrls((data || []).map((x) => x.path));
+      byMark = {};
+      (data || []).forEach((x) => { (byMark[x.mark_id] = byMark[x.mark_id] || []).push({ ...x, url: urls[x.path] || '' }); });
+    }
+
+    async function save(markId, files) {
+      if (!ready) { toast('Щоб прикріплювати скріни, запусти міграцію 024_mark_files у Supabase'); return 0; }
+      const room = MAX - (byMark[markId]?.length || 0);
+      const list = files.filter(isImg).slice(0, Math.max(0, room));
+      if (files.length && !list.length) { toast(room <= 0 ? `До піна — не більше ${MAX} скрінів` : 'Можна лише картинки (PNG, JPG, WebP, GIF)'); return 0; }
+      let ok = 0;
+      for (const f of list) {
+        if (f.size > MAXMB * 1048576) { toast(`Файл більший за ${MAXMB} МБ`); continue; }
+        try {
+          const path = await CRM.upload(await shrink(f), 'feedback-marks');
+          const { error: err } = await sb.from('feedback_mark_files').insert({ mark_id: markId, feedback_id: id, path });
+          if (err) { CRM.removeFiles([path]); throw err; }
+          ok += 1;
+        } catch (e) { CRM.fail(e); break; }
+      }
+      return ok;
+    }
+
+    async function remove(fileId) {
+      const f = Object.values(byMark).flat().find((x) => x.id === fileId);
+      if (!f || !confirm('Прибрати цей скрін із піна?')) return false;
+      const { error: err } = await sb.from('feedback_mark_files').delete().eq('id', fileId);
+      if (err) { CRM.fail(err); return false; }
+      CRM.removeFiles([f.path]);
+      return true;
+    }
+
+    // перегляд на весь екран
+    function lightbox(markId, startId) {
+      const list = byMark[markId] || [];
+      let i = Math.max(0, list.findIndex((x) => x.id === startId));
+      const wrap = el('div', 'pf_lightbox');
+      wrap.setAttribute('role', 'dialog'); wrap.setAttribute('aria-modal', 'true'); wrap.setAttribute('aria-label', 'Скрін до піна');
+      const img = el('img', 'pf_lightbox-img');
+      const bar = el('div', 'pf_lightbox-bar');
+      const count = el('span', 'pf_lightbox-count');
+      const orig = el('a', 'pf_lightbox-link', 'Оригінал ↗'); orig.target = '_blank'; orig.rel = 'noopener';
+      const close = el('button', 'pf_lightbox-close', '×'); close.type = 'button'; close.setAttribute('aria-label', 'Закрити');
+      bar.append(count, orig, close);
+      wrap.append(img, bar);
+      const show = () => { const f = list[i]; img.src = f.url; img.alt = `Скрін ${i + 1}`; orig.href = f.url; count.textContent = list.length > 1 ? `${i + 1} / ${list.length}` : ''; };
+      const done = () => { wrap.remove(); document.removeEventListener('keydown', key, true); };
+      const key = (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); done(); }
+        if (e.key === 'ArrowRight' && list.length > 1) { i = (i + 1) % list.length; show(); }
+        if (e.key === 'ArrowLeft' && list.length > 1) { i = (i - 1 + list.length) % list.length; show(); }
+      };
+      wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target === close) done(); });
+      document.addEventListener('keydown', key, true);
+      document.body.append(wrap);
+      show();
+      close.focus();
+    }
+
+    // мініатюри піна (+ «+ Скрін», × для свого)
+    function strip(markId, onChange) {
+      const box = el('div', 'pf_strip');
+      (byMark[markId] || []).forEach((f) => {
+        const t = el('span', 'pf_thumb');
+        const b = el('button', 'pf_thumb-btn'); b.type = 'button'; b.setAttribute('aria-label', 'Відкрити скрін');
+        const img = el('img'); img.src = f.url; img.alt = ''; img.loading = 'lazy';
+        b.append(img);
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); lightbox(markId, f.id); });
+        t.append(b);
+        if (f.created_by === user.id || can('pm,admin')) {
+          const x = el('button', 'pf_thumb-del', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Прибрати скрін');
+          x.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); if (await remove(f.id)) onChange(); });
+          t.append(x);
+        }
+        box.append(t);
+      });
+      if (ready && (byMark[markId]?.length || 0) < MAX) {
+        const add = el('label', 'button is-text is-small pf_add', '+ Скрін');
+        add.title = 'Додати скрін (або перетягни картинку на пін)';
+        const inp = el('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.multiple = true; inp.hidden = true;
+        inp.addEventListener('change', async () => { const n = await save(markId, [...inp.files]); inp.value = ''; if (n) { toast(n > 1 ? `Скрінів додано: ${n}` : 'Скрін додано'); onChange(); } });
+        add.addEventListener('click', (e) => e.stopPropagation());
+        add.append(inp);
+        box.append(add);
+      }
+      return box;
+    }
+
+    // перетягнути картинку на рядок піна
+    function dropTarget(row, markId, onChange) {
+      if (row.dataset.pfDrop) return;
+      row.dataset.pfDrop = '1';
+      row.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.items || [])].some((x) => x.kind === 'file')) { e.preventDefault(); row.classList.add('is-dragover'); } });
+      row.addEventListener('dragleave', () => row.classList.remove('is-dragover'));
+      row.addEventListener('drop', async (e) => {
+        e.preventDefault(); row.classList.remove('is-dragover');
+        const n = await save(markId, [...(e.dataTransfer?.files || [])]);
+        if (n) { toast('Скрін додано'); onChange(); }
+      });
+    }
+
+    // поле вкладень у формі нового піна: ⌘V / перетягнути / вибрати; файли чекають збереження піна
+    function picker(form) {
+      const st = { files: [] };
+      const box = el('div', 'pf_picker');
+      const hint = el('div', 'pf_picker-hint');
+      const pick = el('label', 'pf_picker-pick', 'вибери файл');
+      const inp = el('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.multiple = true; inp.hidden = true;
+      pick.append(inp);
+      hint.append('Скрін: встав ⌘V (з Figma — Shift+⌘+C), перетягни або ', pick);
+      const list = el('div', 'pf_strip');
+      box.append(hint, list);
+      const draw = () => {
+        list.replaceChildren();
+        st.files.forEach((f, i) => {
+          const t = el('span', 'pf_thumb');
+          const img = el('img'); img.alt = ''; img.src = URL.createObjectURL(f); img.onload = () => URL.revokeObjectURL(img.src);
+          const x = el('button', 'pf_thumb-del', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Прибрати');
+          x.addEventListener('click', () => { st.files.splice(i, 1); draw(); });
+          t.append(img, x); list.append(t);
+        });
+        box.classList.toggle('has-files', st.files.length > 0);
+      };
+      const add = (files) => {
+        const imgs = [...files].filter(isImg);
+        if (!imgs.length) return false;
+        st.files = st.files.concat(imgs).slice(0, MAX);
+        draw();
+        return true;
+      };
+      inp.addEventListener('change', () => { add(inp.files); inp.value = ''; });
+      form.addEventListener('paste', (e) => { if (add(e.clipboardData?.files || [])) e.preventDefault(); });
+      box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('is-dragover'); });
+      box.addEventListener('dragleave', () => box.classList.remove('is-dragover'));
+      box.addEventListener('drop', (e) => { e.preventDefault(); box.classList.remove('is-dragover'); add(e.dataTransfer?.files || []); });
+      form.addEventListener('reset', () => { st.files = []; draw(); });
+      box.hidden = !ready;
+      st.el = box;
+      st.refresh = () => { box.hidden = !ready; };
+      return st;
+    }
+
+    return { load, save, strip, dropTarget, picker, has: (m) => (byMark[m]?.length || 0) > 0, get ready() { return ready; } };
+  })();
+
   function drawShots() {
     render('feedback-files', shots.map((x) => {
       const count = marks.filter((m) => m.file_id === x.id && !m.done).length;
@@ -126,6 +309,13 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   // ---------- позначки ----------
   const stage = root.querySelector('[data-mark-stage]');
   const markForm = root.querySelector('[data-mark-form]');
+  // v0.22: вкладення у формі піна на скріні
+  const markFormEl = markForm?.querySelector('form');
+  const markPicker = markFormEl ? pinFiles.picker(markFormEl) : null;
+  if (markPicker) {
+    const ta = markFormEl.querySelector('textarea');
+    if (ta) ta.after(markPicker.el); else markFormEl.prepend(markPicker.el);
+  }
   const hint = root.querySelector('[data-mark-hint]');
   let openFile = null; // id скріна, відкритого в модалці
   let draft = null;    // { x, y } — ще не збережена позначка
@@ -136,6 +326,8 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       .eq('feedback_id', id).order('created_at');
     if (err) return CRM.fail(err);
     marks = data.map((m, i) => ({ ...m, n: i + 1 }));
+    await pinFiles.load();
+    markPicker?.refresh();
     drawShots();
     drawMarkList();
     drawStage();
@@ -159,6 +351,13 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
         check.setAttribute('aria-label', `Позначка ${m.n} виконана`);
       }
       if (m.created_by !== user.id && !can('pm,admin')) el.querySelector('[data-action="mark-delete"]')?.remove();
+      // v0.22: скріни до піна
+      el.querySelector('.pf_strip')?.remove();
+      if (pinFiles.ready) {
+        const st = pinFiles.strip(m.id, loadMarks);
+        (el.querySelector('[data-field="note"]')?.parentElement || el).append(st);
+        pinFiles.dropTarget(el, m.id, loadMarks);
+      }
     });
     // v0.20.1: без скрінів секція «Позначки» — лише друга порожня плашка, ховаємо
     const sec = root.querySelector('[data-list="marks"]')?.closest('section');
@@ -248,10 +447,11 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   onSubmit('mark', async (d, form) => {
     const note = (d.note || '').trim();
     if (!draft || !openFile || !note) return;
-    const { error: err } = await sb.from('feedback_marks').insert({
+    const { data: row, error: err } = await sb.from('feedback_marks').insert({
       feedback_id: id, file_id: openFile, x: draft.x, y: draft.y, note: note.slice(0, 500),
-    });
+    }).select('id').single();
     if (err) throw err;
+    if (markPicker?.files.length && row?.id) await pinFiles.save(row.id, markPicker.files);
     draft = null;
     form.reset();
     toast('Позначку додано');
@@ -387,6 +587,8 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       pinForm.innerHTML = '<textarea class="form-input" name="note" maxlength="500" required rows="3" placeholder="Що змінити тут?" aria-label="Текст піна"></textarea>'
         + '<div class="rv_form-actions"><button class="button is-small" type="submit">Зберегти пін</button>'
         + '<button class="button is-text is-small" type="button" data-rv="cancel">Скасувати</button></div>';
+      const picker = pinFiles.picker(pinForm);
+      pinForm.querySelector('.rv_form-actions').before(picker.el);
       const list = mk('div', 'rv_list');
       const other = mk('div', 'rv_other');
       side.append(top, bar, status, pinForm, list, other);
@@ -401,7 +603,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       stage.append(scaleBox, zoom);
       wrap.append(side, stage);
       document.body.append(wrap);
-      return { wrap, side, back, modes, widths, status, pinForm, list, other, stage, scaleBox, frame, zoom };
+      return { wrap, side, back, modes, widths, status, pinForm, picker, list, other, stage, scaleBox, frame, zoom };
     }
 
     function post(msg) {
@@ -473,6 +675,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
         acts.append(done);
         if (m.created_by === user.id || can('pm,admin')) acts.append(btn('button is-text is-small', 'Видалити', 'delete'));
         row.append(num, txt, acts);
+        if (pinFiles.ready) { txt.append(pinFiles.strip(m.id, loadMarks)); pinFiles.dropTarget(row, m.id, loadMarks); }
         ui.list.append(row);
       });
       const rest = urlPins().filter((m) => (m.anchor.w || 1440) !== width);
@@ -530,10 +733,11 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       if (!draft || !note) return;
       const btnSave = ui.pinForm.querySelector('[type="submit"]');
       btnSave.disabled = true;
-      const { error: err } = await sb.from('feedback_marks').insert({
+      const { data: row, error: err } = await sb.from('feedback_marks').insert({
         feedback_id: id, file_id: null, x: draft.x, y: draft.y, note: note.slice(0, 500),
         anchor: { w: width, py: draft.py, dh: draft.dh },
-      });
+      }).select('id').single();
+      if (!err && row?.id && ui.picker.files.length) await pinFiles.save(row.id, ui.picker.files);
       btnSave.disabled = false;
       if (err) {
         if (/anchor|file_id|null value/i.test(err.message || '')) return toast('Спершу запусти міграцію 023_url_review у Supabase');

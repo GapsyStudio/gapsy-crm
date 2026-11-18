@@ -1,0 +1,55 @@
+-- 024_mark_files · Gapsy CRM v0.22.0
+-- Скріни до пінів: дизайнер прикріплює картинку (напр. фрейм із Figma: Shift+⌘+C → ⌘V) до піна на сторінці чи на скріні.
+-- Лише структура, без даних. Ідемпотентна. Запуск: Supabase → SQL Editor → вставити весь текст → Run.
+
+create table if not exists public.feedback_mark_files (
+  id          uuid primary key default gen_random_uuid(),
+  mark_id     uuid not null references public.feedback_marks (id) on delete cascade,
+  feedback_id uuid not null references public.feedback (id) on delete cascade,
+  path        text not null check (path ~ '^feedback-marks/[0-9a-f-]{36}/[A-Za-z0-9._-]{1,120}$'),
+  created_by  uuid not null references public.profiles (id) default auth.uid(),
+  created_at  timestamptz not null default now()
+);
+create index if not exists feedback_mark_files_feedback_idx on public.feedback_mark_files (feedback_id);
+create index if not exists feedback_mark_files_mark_idx on public.feedback_mark_files (mark_id);
+alter table public.feedback_mark_files enable row level security;
+
+drop policy if exists "mark files: staff read"   on public.feedback_mark_files;
+drop policy if exists "mark files: staff insert" on public.feedback_mark_files;
+drop policy if exists "mark files: owner delete" on public.feedback_mark_files;
+
+-- читає вся команда (як і піни)
+create policy "mark files: staff read" on public.feedback_mark_files for select to authenticated
+  using (public.is_staff());
+-- додає будь-хто з команди, лише від свого імені, лише файл зі своєї папки і лише до піна цієї ж правки
+create policy "mark files: staff insert" on public.feedback_mark_files for insert to authenticated
+  with check (
+    public.is_staff()
+    and created_by = auth.uid()
+    and split_part(path, '/', 2) = auth.uid()::text
+    and exists (select 1 from public.feedback_marks m where m.id = mark_id and m.feedback_id = feedback_mark_files.feedback_id)
+  );
+-- прибирає автор файлу або PM/admin
+create policy "mark files: owner delete" on public.feedback_mark_files for delete to authenticated
+  using (created_by = auth.uid() or public.has_role('pm', 'admin'));
+-- змінювати рядок не можна (лише додати / прибрати)
+revoke update on public.feedback_mark_files from authenticated;
+
+-- не більше 6 скрінів на один пін
+create or replace function public.mark_files_limit()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (select count(*) from public.feedback_mark_files where mark_id = new.mark_id) >= 6 then
+    raise exception 'Max 6 images per pin';
+  end if;
+  return new;
+end $$;
+drop trigger if exists mark_files_limit_trg on public.feedback_mark_files;
+create trigger mark_files_limit_trg before insert on public.feedback_mark_files
+  for each row execute function public.mark_files_limit();
+
+-- Файли лежать у приватному bucket media (папка feedback-marks/<user>/…); його політики вже є з 002:
+-- команда читає й завантажує, видаляє власник файлу або PM/admin.
+
+-- Перевірка (має повернути 1):
+select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'feedback_mark_files';

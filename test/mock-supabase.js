@@ -86,10 +86,15 @@ function builder(table) {
     upsert(row, opt) { window.__calls.push(['upsert', table, row, opt]); st.upsert = row; return b; },
     delete() { window.__calls.push(['delete', table]); return b; },
     then(res) {
+      if ((window.__ERR_TABLES || []).includes(table)) return Promise.resolve({ data: null, error: { message: `relation "${table}" does not exist` } }).then(res);
       let data = FIX[table] || [];
       if (st.insert) {
         data = { id: 'new1' };
         // v0.21: позначки зберігаємо у фікстурі, щоб перечитування їх бачило
+        if (table === 'feedback_mark_files' && window.__PERSIST_MARKS) {
+          const row = { id: `mf${(FIX.feedback_mark_files || []).length + 1}`, created_by: 'u1', created_at: new Date().toISOString(), ...st.insert };
+          (FIX.feedback_mark_files = FIX.feedback_mark_files || []).push(row); data = row;
+        }
         if (table === 'feedback_marks' && window.__PERSIST_MARKS) {
           const row = { id: `mk${(FIX.feedback_marks || []).length + 1}`, done: false, created_by: 'u1', created_at: new Date().toISOString(), author: { full_name: 'Нелія' }, ...st.insert };
           (FIX.feedback_marks = FIX.feedback_marks || []).push(row); data = row;
@@ -124,7 +129,7 @@ window.supabase = { createClient: () => ({
     if (name === 'quiz_admin_list') return { data: FIX.quiz_questions.filter((q) => !args?.t || q.track === args.t).map((q) => ({ ...q, correct: 0, explanation: null })), error: null }; if (name === 'access_reveal') return { data: [{ login: 'studio@gapsy.studio', password: 'S3cret!', extra: null }], error: null }; return { data: name === 'search_all' ? [{ kind: 'feedback', id: 'f1', title: 'Кнопка в хедері', url: '/feedback-item?id=f1' }] : null, error: null }; },
   storage: { from: () => ({
     createSignedUrls: async (paths) => ({ data: paths.map((p) => ({ path: p, signedUrl: 'data:image/png;base64,iVBORw0KGgo=' })), error: null }),
-    upload: async () => ({ error: null }), remove: async (paths) => { window.__calls.push(['storage-remove', 'media', paths]); return { error: null }; }, getPublicUrl: (p) => ({ data: { publicUrl: 'https://cdn/' + p } }),
+    upload: async (path, file) => { window.__calls.push(['storage-upload', 'media', path, file && file.type, file && file.size]); return { error: null }; }, remove: async (paths) => { window.__calls.push(['storage-remove', 'media', paths]); return { error: null }; }, getPublicUrl: (p) => ({ data: { publicUrl: 'https://cdn/' + p } }),
   }) },
   channel: () => ({ on() { return this; }, subscribe() { return this; } }),
 }) };

@@ -1,0 +1,9 @@
+  /* 19. v0.23 Ревʼю внутрішніх сторінок: рядок адреси, «На інших сторінках» (елементи створює feedback-item.js) */
+  .rv_nav { display: flex; align-items: center; gap: 0.25rem; padding: 0 0 0 0.625rem; border: 1px solid var(--border--default, #e2e2e2); border-radius: 0.5rem; background: var(--background--primary, #fff); }
+  .rv_nav:focus-within { border-color: var(--text--primary, #1f1f1f); }
+  .rv_nav-host { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: var(--text--secondary, #797979); }
+  .rv_nav .rv_nav-path { flex: 1 1 auto; min-width: 0; height: 2.25rem !important; margin: 0; padding: 0 0.25rem; border: 0 !important; box-shadow: none !important; background: transparent; font-size: 0.8125rem; }
+  .rv_nav .button { flex: none; margin: 0.125rem !important; }
+  .rv_other { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  .rv_other-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+  .rv_other-page { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

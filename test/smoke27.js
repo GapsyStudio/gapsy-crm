@@ -1,6 +1,6 @@
 // Смоук v0.21: ревʼю за посиланням. CRM на :8765, «сайт» з review-bridge.js на :8766 (інший origin).
 const { chromium } = require('playwright');
-const CSS = ['../webflow/v021.css', '../webflow/v022.css'].map((f) => require('fs').readFileSync(require('path').join(__dirname, f), 'utf8')).join('\n') + '[hidden]{display:none!important}';
+const CSS = ['../webflow/v021.css', '../webflow/v022.css', '../webflow/v023.css'].map((f) => require('fs').readFileSync(require('path').join(__dirname, f), 'utf8')).join('\n') + '[hidden]{display:none!important}';
 (async () => {
   const b = await chromium.launch(); const errs = [];
   const open = async (url, fix = {}, vw = 1440, host = 'localhost') => {
@@ -65,7 +65,7 @@ const CSS = ['../webflow/v021.css', '../webflow/v022.css'].map((f) => require('f
   console.log('390: frame width', await p.$eval('.rv_frame', (f) => f.style.width), '| other:', await p.$eval('.rv_other', (e) => e.textContent), '| width saved:', await p.evaluate(() => window.__calls.some((c) => c[0] === 'update' && c[2]?.review_width === 390)));
   // перехід на іншу сторінку сайту в Browse → попередження, Коментувати вимкнено
   await frame.click('#nav-about'); await p.waitForTimeout(1200);
-  console.log('other page warn:', await p.$eval('.rv_status', (e) => e.className + ' ' + e.textContent.slice(0, 40)), '| comment disabled:', await p.$eval('[data-rv="mode:comment"]', (x) => x.disabled));
+  console.log('other page: path', await p.$eval('.rv_nav-path', (e) => e.value), '| comment enabled:', await p.$eval('[data-rv="mode:comment"]', (x) => !x.disabled));
   // Esc закриває (фокус — у панелі CRM, не в iframe)
   await p.focus('.rv_back'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   console.log('closed:', !(await p.$('.rv')), '| hash:', await p.evaluate(() => location.hash));

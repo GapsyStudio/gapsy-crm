@@ -14,6 +14,8 @@
  *   сторінка з feedback.page_url у iframe (?crm-review=1), ліворуч піни, Коментувати / Переглядати, ширини 1440 / 768 / 390.
  *   Піни на сайті малює review-bridge.js (має стояти у Footer сайту); зберігаються у feedback_marks з file_id = null і anchor {w, py, dh}.
  *   Відкрити одразу: /feedback-item?id=…#review. Потрібна міграція 023_url_review. Стилі — блок 17 у Head.
+ * v0.23: піни на будь-якій сторінці сайту — anchor.path (без path = сторінка з page_url). У ревʼю є рядок адреси сторінки,
+ *   «Переглядати» → перейти посиланням → «Коментувати»; список «На інших сторінках: /about · 2» перемикає сторінку.
  * v0.22: скріни до пінів (таблиця feedback_mark_files, міграція 024): у формі нового піна — вставити (⌘V, напр. з Figma
  *   Shift+⌘+C), перетягнути або вибрати файл; до наявного піна — «+ Скрін» або перетягнути на рядок. Мініатюри в списках,
  *   клік — перегляд на весь екран. Картинки зменшуються до 2400 px перед завантаженням. Стилі — блок 18 у Head. */
@@ -21,6 +23,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   const id = param('id');
   const $ = (s) => root.querySelector(s);
   const set = (k, v) => root.querySelectorAll(`[data-item="${k}"]`).forEach((el) => { el.textContent = v; });
+  const safePath = (u) => { try { return new URL(u).pathname.replace(/\/+$/, '') || '/'; } catch (e) { return '/'; } };
   if (!id) return location.replace('/feedback');
 
   const { data: f, error } = await sb.from('feedback')
@@ -341,7 +344,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       ...m,
       author: name(m.author),
       time: time(m.created_at),
-      file: m.file_id ? `Скрін ${shots.find((s) => s.id === m.file_id)?.n || ''}` : `На сторінці · ${m.anchor?.w || ''}`,
+      file: m.file_id ? `Скрін ${shots.find((s) => s.id === m.file_id)?.n || ''}` : `На сторінці ${m.anchor?.path || (safePath(f.page_url))} · ${m.anchor?.w || ''}`,
     })), (el, m) => {
       el.dataset.id = m.id;
       el.classList.toggle('is-done', m.done);
@@ -502,7 +505,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     let mode = 'comment';
     let ui = null;          // елементи режиму ревʼю, коли відкритий
     let ready = false;      // міст відповів
-    let onPage = true;      // у iframe та сама сторінка, що в page_url
+    let curPath = null;     // v0.23: сторінка, відкрита в iframe (pathname), — піни показуємо й ставимо для неї
     let draft = null;       // {x, y, py, dh} з мосту
     let focusAfter = null;  // id піна, до якого прокрутити після ready
     let waitTimer = null;
@@ -512,7 +515,10 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     const target = () => safeUrl(f.page_url || '');
     const normPath = (p) => (p || '/').replace(/\/+$/, '') || '/';
     const urlPins = () => marks.filter((m) => !m.file_id && m.anchor);
-    const pinsHere = () => urlPins().filter((m) => (m.anchor.w || 1440) === width);
+    const startPath = () => normPath(target()?.pathname);
+    const pinPath = (m) => normPath(m.anchor?.path || target()?.pathname);   // старі піни без path — на сторінці з page_url
+    const onPath = (m) => pinPath(m) === normPath(curPath || startPath());
+    const pinsHere = () => urlPins().filter((m) => (m.anchor.w || 1440) === width && onPath(m));
 
     // ---------- картка «Жива сторінка» на сторінці правки ----------
     const card = mk('section', 'card rv_card');
@@ -586,6 +592,14 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       widths.setAttribute('role', 'group'); widths.setAttribute('aria-label', 'Ширина');
       WIDTHS.forEach((w) => { const b = btn('view_switch-btn', String(w), `width:${w}`); b.title = WLABEL[w]; widths.append(b); });
       bar.append(modes, widths);
+      // v0.23: рядок адреси — яку сторінку сайту ревʼюїмо
+      const nav = mk('form', 'rv_nav');
+      const host = mk('span', 'rv_nav-host', target()?.host || '');
+      const path = mk('input', 'form-input rv_nav-path');
+      path.name = 'path'; path.type = 'text'; path.spellcheck = false; path.autocomplete = 'off';
+      path.setAttribute('aria-label', 'Сторінка сайту'); path.placeholder = '/';
+      const go = mk('button', 'button is-text is-small', 'Відкрити'); go.type = 'submit';
+      nav.append(host, path, go);
       const status = mk('div', 'rv_status');
       status.setAttribute('role', 'status');
       const pinForm = mk('form', 'rv_form');
@@ -596,7 +610,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       pinForm.querySelector('.rv_form-actions').before(picker.el);
       const list = mk('div', 'rv_list');
       const other = mk('div', 'rv_other');
-      side.append(top, bar, status, pinForm, list, other);
+      side.append(top, bar, nav, status, pinForm, list, other);
       const stage = mk('div', 'rv_stage');
       const scaleBox = mk('div', 'rv_scale');
       const frame = mk('iframe', 'rv_frame');
@@ -608,7 +622,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       stage.append(scaleBox, zoom);
       wrap.append(side, stage);
       document.body.append(wrap);
-      return { wrap, side, back, modes, widths, status, pinForm, picker, list, other, stage, scaleBox, frame, zoom };
+      return { wrap, side, back, modes, widths, nav, path, status, pinForm, picker, list, other, stage, scaleBox, frame, zoom };
     }
 
     function post(msg) {
@@ -618,8 +632,8 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     }
     const pinPayload = () => pinsHere().map((m) => ({ id: m.id, n: m.n, x: m.x, y: m.y, py: typeof m.anchor.py === 'number' ? m.anchor.py : undefined, done: !!m.done }));
     function sendState() {
-      post({ type: 'mode', mode: onPage ? mode : 'browse' });
-      post({ type: 'pins', pins: onPage ? pinPayload() : [] });
+      post({ type: 'mode', mode });
+      post({ type: 'pins', pins: pinPayload() });
     }
 
     function fit() {
@@ -648,16 +662,14 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
         return ui.status.append(' ', a);
       }
       if (!ready) return setStatus('Завантажуємо сторінку…');
-      if (!onPage) return setStatus('Ти на іншій сторінці сайту — піни прив’язані до сторінки правки.', 'warn');
       setStatus(mode === 'comment' ? 'Клікни по сторінці, щоб поставити пін. Скрол і анімації працюють.' : 'Сторінка повністю інтерактивна. Щоб ставити піни — «Коментувати».');
     }
 
     function drawUi() {
       if (!ui) return;
       ui.modes.querySelectorAll('[data-rv^="mode:"]').forEach((b) => {
-        const on = b.dataset.rv === `mode:${onPage ? mode : 'browse'}`;
+        const on = b.dataset.rv === `mode:${mode}`;
         b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on);
-        b.disabled = !onPage && b.dataset.rv === 'mode:comment';
       });
       ui.widths.querySelectorAll('[data-rv^="width:"]').forEach((b) => {
         const on = b.dataset.rv === `width:${width}`;
@@ -667,7 +679,8 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       // список пінів цієї ширини
       ui.list.replaceChildren();
       const here = pinsHere();
-      if (!here.length) ui.list.append(mk('div', 'list_meta rv_empty', mode === 'comment' ? 'Пінів на цій ширині ще немає.' : 'Пінів на цій ширині немає.'));
+      if (!here.length) ui.list.append(mk('div', 'list_meta rv_empty', mode === 'comment' ? 'На цій сторінці й ширині пінів ще немає.' : 'На цій сторінці й ширині пінів немає.'));
+      if (document.activeElement !== ui.path) ui.path.value = curPath || startPath();
       here.forEach((m) => {
         const row = mk('div', `rv_pin${m.done ? ' is-done' : ''}`);
         row.dataset.id = m.id;
@@ -683,23 +696,42 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
         if (pinFiles.ready) { txt.append(pinFiles.strip(m.id, loadMarks)); pinFiles.dropTarget(row, m.id, loadMarks); }
         ui.list.append(row);
       });
-      const rest = urlPins().filter((m) => (m.anchor.w || 1440) !== width);
       ui.other.replaceChildren();
-      if (rest.length) {
+      // інші ширини цієї сторінки
+      const restW = urlPins().filter((m) => onPath(m) && (m.anchor.w || 1440) !== width);
+      if (restW.length) {
         const by = {};
-        rest.forEach((m) => { by[m.anchor.w] = (by[m.anchor.w] || 0) + 1; });
-        ui.other.append(mk('span', 'list_meta', 'На інших ширинах: '));
-        Object.keys(by).forEach((w) => ui.other.append(btn('button is-text is-small', `${w} · ${by[w]}`, `width:${w}`)));
+        restW.forEach((m) => { by[m.anchor.w] = (by[m.anchor.w] || 0) + 1; });
+        const row = mk('div', 'rv_other-row');
+        row.append(mk('span', 'list_meta', 'На інших ширинах: '));
+        Object.keys(by).forEach((w) => row.append(btn('button is-text is-small', `${w} · ${by[w]}`, `width:${w}`)));
+        ui.other.append(row);
+      }
+      // v0.23: інші сторінки сайту з пінами
+      const restP = urlPins().filter((m) => !onPath(m));
+      if (restP.length) {
+        const by = {};
+        restP.forEach((m) => { const k = pinPath(m); by[k] = (by[k] || 0) + (m.done ? 0 : 1); });
+        const row = mk('div', 'rv_other-row');
+        row.append(mk('span', 'list_meta', 'На інших сторінках: '));
+        Object.keys(by).sort().forEach((pth) => {
+          const b = btn('button is-text is-small rv_other-page', by[pth] ? `${pth} · ${by[pth]}` : `${pth} ✓`, 'goto');
+          b.dataset.path = pth; b.title = `Відкрити ${pth}`;
+          row.append(b);
+        });
+        ui.other.append(row);
       }
       statusDefault();
     }
 
-    function load() {
+    function load(path) {
       const t = target();
       if (!ui || !t) return;
-      ready = false; failed = false; onPage = true; draft = null;
+      ready = false; failed = false; draft = null;
+      curPath = normPath(path || curPath || t.pathname);
       clearTimeout(waitTimer);
       const u = new URL(t.href);
+      if (curPath !== normPath(t.pathname)) { u.pathname = curPath; u.search = ''; u.hash = ''; }
       u.searchParams.set('crm-review', '1');
       ui.frame.src = u.href;
       drawUi();
@@ -714,12 +746,14 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       if (d.type === 'ready') {
         ready = true;
         clearTimeout(waitTimer);
-        onPage = normPath(d.path) === normPath(t.pathname);
-        if (!onPage) draft = null;
+        const p = typeof d.path === 'string' ? normPath(d.path.slice(0, 300)) : startPath();
+        if (p !== curPath) draft = null;
+        curPath = p;
         sendState();
         drawUi();
-        if (focusAfter && onPage) { post({ type: 'focus', id: focusAfter }); focusAfter = null; }
-      } else if (d.type === 'newpin' && mode === 'comment' && onPage) {
+        const fm = focusAfter && marks.find((x) => x.id === focusAfter);
+        if (fm && onPath(fm)) { post({ type: 'focus', id: focusAfter }); focusAfter = null; }
+      } else if (d.type === 'newpin' && mode === 'comment') {
         const num = (k) => (typeof d[k] === 'number' && Number.isFinite(d[k]) ? d[k] : null);
         const x = num('x'); const y = num('y');
         if (x == null || y == null || x < 0 || x > 1 || y < 0 || y > 1) return;
@@ -740,7 +774,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       btnSave.disabled = true;
       const { data: row, error: err } = await sb.from('feedback_marks').insert({
         feedback_id: id, file_id: null, x: draft.x, y: draft.y, note: note.slice(0, 500),
-        anchor: { w: width, py: draft.py, dh: draft.dh },
+        anchor: { w: width, py: draft.py, dh: draft.dh, path: curPath || startPath() },
       }).select('id').single();
       if (!err && row?.id && ui.picker.files.length) await pinFiles.save(row.id, ui.picker.files);
       btnSave.disabled = false;
@@ -774,6 +808,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       if (a === 'close') close();
       else if (a.startsWith('mode:')) { mode = a.slice(5); if (mode !== 'comment') draft = null; sendState(); drawUi(); }
       else if (a.startsWith('width:')) setWidth(Number(a.slice(6)));
+      else if (a === 'goto' && b.dataset.path) load(b.dataset.path);
       else if (a === 'cancel') { draft = null; ui.pinForm.reset(); sendState(); drawUi(); }
       else if (a === 'focus' && m) post({ type: 'focus', id: m.id });
       else if (a === 'toggle' && m) toggleDirect(m);
@@ -804,19 +839,32 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       focusAfter = focusId || null;
       const fm = focusId && marks.find((x) => x.id === focusId);
       if (fm?.anchor?.w && WIDTHS.includes(fm.anchor.w)) width = fm.anchor.w;
-      if (ui) { if (focusAfter && ready) { post({ type: 'focus', id: focusAfter }); focusAfter = null; } return; }
+      if (ui) {
+        if (fm && !onPath(fm)) { load(pinPath(fm)); return; }
+        fit(); sendState(); drawUi();
+        if (focusAfter && ready) { post({ type: 'focus', id: focusAfter }); focusAfter = null; }
+        return;
+      }
+      curPath = fm ? pinPath(fm) : null;
       lastFocus = document.activeElement;
       ui = build();
       document.documentElement.classList.add('crm-modal-open', 'crm-review-open');
       ui.wrap.addEventListener('click', onUiClick);
       ui.pinForm.addEventListener('submit', savePin);
+      ui.nav.addEventListener('submit', (e) => {
+        e.preventDefault();
+        let v = ui.path.value.trim();
+        try { if (/^https?:/i.test(v)) { const u = new URL(v); if (u.origin !== target().origin) return toast('Можна лише сторінки цього ж сайту'); v = u.pathname; } } catch (er) { return; }
+        if (!v.startsWith('/')) v = `/${v}`;
+        load(v.split(/[?#]/)[0].slice(0, 300));
+      });
       // якщо перший ready загубився (міст стартував раніше за слухача) — питаємо ще раз після load
       ui.frame.addEventListener('load', () => post({ type: 'hello' }));
       window.addEventListener('message', onMessage);
       window.addEventListener('resize', fit);
       document.addEventListener('keydown', onKey, true);
       fit();
-      load();
+      load(curPath && curPath !== startPath() ? curPath : undefined);
       history.replaceState(null, '', `${location.pathname}${location.search}#review`);
       setTimeout(() => ui?.back.focus(), 30);
     }
@@ -827,7 +875,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       window.removeEventListener('resize', fit);
       document.removeEventListener('keydown', onKey, true);
       ui.wrap.remove();
-      ui = null; ready = false; draft = null;
+      ui = null; ready = false; draft = null; curPath = null;
       document.documentElement.classList.remove('crm-review-open');
       if (!document.querySelector('[data-modal].is-open')) document.documentElement.classList.remove('crm-modal-open');
       history.replaceState(null, '', `${location.pathname}${location.search}`);

@@ -1,6 +1,6 @@
 // Смоук v0.22: скріни до пінів (вставити ⌘V / вибрати файл / перетягнути), мініатюри, перегляд, без міграції 024.
 const { chromium } = require('playwright');
-const CSS = ['../webflow/v021.css', '../webflow/v022.css'].map((f) => require('fs').readFileSync(require('path').join(__dirname, f), 'utf8')).join('\n') + '[hidden]{display:none!important}';
+const CSS = ['../webflow/v021.css', '../webflow/v022.css', '../webflow/v023.css'].map((f) => require('fs').readFileSync(require('path').join(__dirname, f), 'utf8')).join('\n') + '[hidden]{display:none!important}';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR42mP8z8DwnwEJMDGgAQYGBgB1BgH/0XW8iAAAAABJRU5ErkJggg==', 'base64');
 (async () => {
   const b = await chromium.launch(); const errs = [];

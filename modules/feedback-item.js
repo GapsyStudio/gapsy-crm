@@ -16,6 +16,7 @@
  *   Відкрити одразу: /feedback-item?id=…#review. Потрібна міграція 023_url_review. Стилі — блок 17 у Head.
  * v0.23: піни на будь-якій сторінці сайту — anchor.path (без path = сторінка з page_url). У ревʼю є рядок адреси сторінки,
  *   «Переглядати» → перейти посиланням → «Коментувати»; список «На інших сторінках: /about · 2» перемикає сторінку.
+ * v0.23.1: кнопка «Код мосту» (копіює рядок review-bridge.js для Footer сайту) — у картці «Жива сторінка» і в попередженні «Сайт не відповідає».
  * v0.22: скріни до пінів (таблиця feedback_mark_files, міграція 024): у формі нового піна — вставити (⌘V, напр. з Figma
  *   Shift+⌘+C), перетягнути або вибрати файл; до наявного піна — «+ Скрін» або перетягнути на рядок. Мініатюри в списках,
  *   клік — перегляд на весь екран. Картинки зменшуються до 2400 px перед завантаженням. Стилі — блок 18 у Head. */
@@ -512,6 +513,13 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     let failed = false;     // міст так і не відповів
 
     const safeUrl = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x : null; } catch (e) { return null; } };
+    // v0.23.1: рядок для Site Settings → Custom Code → Footer сайту, який ревʼюїмо (однаковий для всіх сайтів)
+    const BRIDGE_VER = 'v0.21.1';
+    const bridgeSnippet = () => `<script defer src="https://cdn.jsdelivr.net/gh/GapsyStudio/gapsy-crm@${BRIDGE_VER}/review-bridge.js" data-crm-origin="${location.origin}"></script>`;
+    async function copyBridge() {
+      try { await navigator.clipboard.writeText(bridgeSnippet()); toast('Код мосту скопійовано — встав у Site Settings → Custom Code → Footer сайту і опублікуй', 5000); }
+      catch (e) { window.prompt('Скопіюй рядок для Footer сайту:', bridgeSnippet()); }
+    }
     const target = () => safeUrl(f.page_url || '');
     const normPath = (p) => (p || '/').replace(/\/+$/, '') || '/';
     const urlPins = () => marks.filter((m) => !m.file_id && m.anchor);
@@ -536,7 +544,9 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     form.innerHTML = '<input class="form-input" name="url" type="url" required placeholder="https://site.webflow.io/сторінка" aria-label="Посилання на сторінку для ревʼю">'
       + '<button class="button is-small" type="submit">Зберегти</button>';
     const help = mk('div', 'list_meta rv_card-help', 'Сторінка відкриється жива, з анімаціями. Піни ставляться прямо на ній — на сайті має стояти review-bridge.js.');
-    body.append(urlLine, openBtn, editBtn, form, help);
+    const bridgeBtn = btn('button is-text is-small rv_card-bridge', 'Код мосту', 'bridge');
+    bridgeBtn.title = 'Скопіювати рядок для Footer сайту (один і той самий для всіх сайтів)';
+    body.append(urlLine, openBtn, editBtn, bridgeBtn, form, help);
     card.append(head, body);
     const filesList = root.querySelector('[data-list="feedback-files"]');
     const before = filesList?.closest('section') || filesList;
@@ -558,6 +568,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       const a = e.target.closest('[data-rv]')?.dataset.rv;
       if (a === 'open') open();
       if (a === 'edit') { card.classList.add('is-editing'); drawCard(); form.elements.url.focus(); }
+      if (a === 'bridge') copyBridge();
     });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -659,7 +670,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
         setStatus('Сайт не відповідає: на ньому немає review-bridge.js або він не дозволяє вбудовування. Переглядати можна, піни — ні.', 'warn');
         const a = mk('a', 'button is-text is-small', 'Відкрити в новій вкладці ↗');
         a.href = target().href; a.target = '_blank'; a.rel = 'noopener';
-        return ui.status.append(' ', a);
+        return ui.status.append(' ', btn('button is-text is-small', 'Скопіювати код мосту', 'bridge'), ' ', a);
       }
       if (!ready) return setStatus('Завантажуємо сторінку…');
       setStatus(mode === 'comment' ? 'Клікни по сторінці, щоб поставити пін. Скрол і анімації працюють.' : 'Сторінка повністю інтерактивна. Щоб ставити піни — «Коментувати».');
@@ -809,6 +820,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       else if (a.startsWith('mode:')) { mode = a.slice(5); if (mode !== 'comment') draft = null; sendState(); drawUi(); }
       else if (a.startsWith('width:')) setWidth(Number(a.slice(6)));
       else if (a === 'goto' && b.dataset.path) load(b.dataset.path);
+      else if (a === 'bridge') copyBridge();
       else if (a === 'cancel') { draft = null; ui.pinForm.reset(); sendState(); drawUi(); }
       else if (a === 'focus' && m) post({ type: 'focus', id: m.id });
       else if (a === 'toggle' && m) toggleDirect(m);

@@ -287,7 +287,9 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       return st;
     }
 
-    return { load, save, strip, dropTarget, picker, has: (m) => (byMark[m]?.length || 0) > 0, get ready() { return ready; } };
+    // шляхи файлів піна / усієї правки — щоб прибрати їх зі сховища разом із піном (рядки БД видаляє каскад)
+    const paths = (markId) => (markId ? byMark[markId] || [] : Object.values(byMark).flat()).map((x) => x.path);
+    return { load, save, strip, dropTarget, picker, paths, has: (m) => (byMark[m]?.length || 0) > 0, get ready() { return ready; } };
   })();
 
   function drawShots() {
@@ -401,9 +403,10 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   action('shot-delete', async () => {
     const shot = shots.find((x) => x.id === openFile);
     if (!shot || !confirm('Видалити цей скрін разом із позначками на ньому?')) return;
+    const pinPaths = marks.filter((mk) => mk.file_id === shot.id).flatMap((mk) => pinFiles.paths(mk.id));
     const { error: err } = await sb.from('feedback_files').delete().eq('id', shot.id);
     if (err) return CRM.fail(err);
-    CRM.removeFiles([shot.path]);
+    CRM.removeFiles([shot.path, ...pinPaths]);
     shots.splice(shots.indexOf(shot), 1);
     shots.forEach((x, i) => { x.n = i + 1; });
     marks = marks.filter((mk) => mk.file_id !== shot.id);
@@ -470,8 +473,10 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   action('mark-delete', async (el) => {
     const m = marks.find((x) => x.id === el.closest('[data-id]')?.dataset.id);
     if (!m || !confirm(`Видалити позначку ${m.n}?`)) return;
+    const files = pinFiles.paths(m.id);
     const { error: err } = await sb.from('feedback_marks').delete().eq('id', m.id);
     if (err) return CRM.fail(err);
+    CRM.removeFiles(files); // v0.22.1: скріни піна — теж зі сховища
     loadMarks();
   });
 
@@ -781,8 +786,10 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     }
     async function deleteDirect(m) {
       if (!confirm(`Видалити пін ${m.n}?`)) return;
+      const files = pinFiles.paths(m.id);
       const { error: err } = await sb.from('feedback_marks').delete().eq('id', m.id);
       if (err) return CRM.fail(err);
+      CRM.removeFiles(files);
       loadMarks();
     }
     function onKey(e) {
@@ -873,7 +880,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     if (!confirm('Видалити правку разом зі скрінами й коментарями?')) return;
     const { error: err } = await sb.from('feedback').delete().eq('id', id);
     if (err) return CRM.fail(err);
-    await CRM.removeFiles(shots.map((x) => x.path)); // v0.11: скріни теж прибираємо зі Storage
+    await CRM.removeFiles(shots.map((x) => x.path).concat(pinFiles.paths())); // v0.11: скріни теж прибираємо зі Storage (v0.22.1: і скріни пінів)
     location.replace('/feedback');
   });
 });

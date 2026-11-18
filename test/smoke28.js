@@ -54,6 +54,10 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR
   console.log('save order:', JSON.stringify(calls));
   console.log('new pin thumbs:', await p.$$eval('.rv_pin', (rows) => rows.map((r) => r.querySelectorAll('.pf_thumb').length)));
   console.log('form cleared:', await p.$$eval('.rv_form .pf_thumb', (x) => x.length) === 0);
+  // v0.22.1: видалення піна прибирає і його скріни зі сховища
+  p.on('dialog', (d) => d.accept());
+  await p.click('.rv_pin[data-id="m1"] [data-rv="delete"]'); await p.waitForTimeout(500);
+  console.log('pin delete → storage remove:', JSON.stringify(await p.evaluate(() => window.__calls.filter((c) => c[0] === 'storage-remove').map((c) => c[2].length))));
   await p.context().close();
 
   // 3) Без міграції 024: жодних помилок, поле вкладень сховане, мініатюр і «+ Скрін» немає

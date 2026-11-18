@@ -1,0 +1,1045 @@
+/* =====================================================================
+ * Gapsy CRM · crm-core.js v0.21.0
+ * Репо: GapsyStudio/gapsy-crm (файли в корені, модулі в modules/).
+ * Конфіг: window.CRM_CONFIG у Site Settings → Head (там же CSS станів і теми).
+ *
+ * Що робить ядро:
+ *  - сесія, профіль, ролі, guard сторінок (data-crm-guard), вхід / вихід;
+ *  - UI за роллю (data-crm-role) і дані користувача (data-crm-user, data-crm-avatar);
+ *  - оболонка: активний пункт меню (data-nav), хлібні крихти (data-crm-crumbs),
+ *    модалки (data-modal + data-action="open:<key>" / "close"), таби (data-tabs/data-tab),
+ *    тема (data-action="toggle-theme", data-theme-switch), toast-и, пошук Cmd+K,
+ *    сповіщення з realtime; v0.16 закріплене (сторінки CRM і посилання) + зірочка «Закріпити сторінку»;
+ *    v0.17 роль sales (входить у staff), модуль cases (кейс-бібліотека Sales), CRM.homeRole() — під яку роль будувати Головну;
+ *    v0.20 меню: групи згортаються (стан у localStorage 'crm-nav-closed'), «Моя робота» злита з Головною, Онбординг ховається через 30 днів;
+ *  - хелпери для модулів: CRM.render, CRM.fill, CRM.badge, CRM.onSubmit, CRM.action,
+ *    CRM.dropzone, CRM.upload, CRM.signedUrls, CRM.options, CRM.time.
+ *
+ * Безпека: це лише UI. Дані захищає RLS у Supabase.
+ * ===================================================================== */
+(() => {
+  const cfg = window.CRM_CONFIG;
+  const html = document.documentElement;
+  if (!cfg || !window.supabase) {
+    html.classList.remove('crm-loading');
+    return console.error('[CRM] Немає CRM_CONFIG або supabase-js');
+  }
+
+  // Модулі в репо (modules/<name>.js). Новий модуль → додати назву сюди.
+  const MODULES = ['dashboard', 'docs', 'doc', 'my-work', 'projects', 'project', 'moodboard', 'references', 'fonts', 'access', 'snippets', 'snippet', 'showcase', 'cases', 'feedback', 'feedback-item', 'reviews', 'leave-balance', 'leave', 'onboarding', 'admin', 'profile'];
+  const STAFF = ['designer', 'developer', 'pm', 'sales', 'admin']; // v0.17: + sales
+  const TEXT = {
+    invalid: 'Невірний email або пароль',
+    failed: 'Не вдалося увійти. Спробуй ще раз',
+    error: 'Щось пішло не так. Спробуй ще раз',
+    saved: 'Збережено',
+    ...cfg.text,
+  };
+
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+  const registry = {};
+  const actions = {};
+  const forms = {};
+
+  const CRM = (window.CRM = {
+    sb, $, $$, TEXT,
+    user: null,
+    profile: null,
+    role: null,
+    module(name, init) { registry[name] = init; },
+    can(rule) {
+      const r = CRM.role;
+      if (!r) return false;
+      const list = String(rule).split(',').map((s) => s.trim());
+      // v0.15: новачок (pending) має доступ лише туди, де правило явно містить 'pending' (онбординг, документи «Старту»)
+      if (r === 'pending') return list.includes('pending');
+      return list.includes('auth') || list.includes(r) || (list.includes('staff') && STAFF.includes(r));
+    },
+    param: (k) => new URLSearchParams(location.search).get(k),
+    /** v0.17: роль для Головної — art (арт-директор), designer, developer, pm, sales, admin (CEO). */
+    homeRole() {
+      if (CRM.role === 'designer' && CRM.profile?.is_art_director) return 'art';
+      return CRM.role;
+    },
+  });
+
+  // ===================================================================
+  // ХЕЛПЕРИ ДЛЯ МОДУЛІВ
+  // ===================================================================
+
+  /** Підставляє дані в елемент: data-field (текст), data-field-src (img), data-field-href (a). */
+  CRM.fill = (root, row) => {
+    const each = (attr, fn) => {
+      if (root.hasAttribute(attr)) fn(root, root.getAttribute(attr));
+      root.querySelectorAll(`[${attr}]`).forEach((el) => fn(el, el.getAttribute(attr)));
+    };
+    each('data-field', (el, k) => { if (k in row) el.textContent = row[k] ?? ''; });
+    each('data-field-src', (el, k) => { if (row[k]) el.src = row[k]; else el.removeAttribute('srcset'); });
+    each('data-field-href', (el, k) => { if (row[k]) el.href = row[k]; });
+    each('data-field-bg', (el, k) => {
+      if (!row[k]) return;
+      Object.assign(el.style, { backgroundImage: `url("${row[k]}")`, backgroundSize: 'cover', backgroundPosition: 'center' });
+    });
+  };
+
+  /**
+   * Рендер списку за шаблоном [data-template] усередині [data-list="key"].
+   * fill(el, row) — додаткове заповнення. Ставить data-state = ready | empty.
+   */
+  CRM.render = (key, rows, fill) => {
+    const list = typeof key === 'string' ? $(`[data-list="${key}"]`) : key;
+    if (!list) return [];
+    const tpl = list.querySelector(':scope > [data-template]:not([data-template="children"])');
+    list.querySelectorAll(':scope > [data-rendered]').forEach((n) => n.remove());
+    if (!tpl) return [];
+    const anchor = list.querySelector(':scope > [data-empty]');
+    const out = rows.map((row) => {
+      const el = tpl.cloneNode(true);
+      el.removeAttribute('data-template');
+      el.setAttribute('data-rendered', '');
+      CRM.fill(el, row);
+      fill && fill(el, row);
+      list.insertBefore(el, anchor);
+      return el;
+    });
+    list.dataset.state = rows.length ? 'ready' : 'empty';
+    return out;
+  };
+
+  /**
+   * Дерево документів у [data-list="docs-tree"]: шаблон посилання [data-template] і контейнер дітей [data-template="children"].
+   * rows: [{ id, parent_id, title, icon, sort }]. Розгорнута лише гілка до активного документа.
+   */
+  CRM.docsTree = (rows, activeId, rootId = null) => {
+    const list = $('[data-list="docs-tree"]');
+    if (!list) return;
+    const linkTpl = list.querySelector(':scope > [data-template]:not([data-template="children"])');
+    const kidsTpl = list.querySelector(':scope > [data-template="children"]');
+    list.querySelectorAll(':scope > [data-rendered]').forEach((n) => n.remove());
+    if (!linkTpl) return;
+    const byParent = {};
+    rows.forEach((r) => (byParent[r.parent_id || 'root'] ||= []).push(r));
+    Object.values(byParent).forEach((a) => a.sort((x, y) => x.sort - y.sort || x.title.localeCompare(y.title)));
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    const open = new Set();
+    for (let d = byId[activeId]; d; d = byId[d.parent_id]) open.add(d.id);
+    const anchor = list.querySelector(':scope > [data-skeleton], :scope > [data-empty]');
+    const draw = (parentKey, into, before) => {
+      (byParent[parentKey] || []).forEach((d) => {
+        const a = linkTpl.cloneNode(true);
+        a.removeAttribute('data-template');
+        a.setAttribute('data-rendered', '');
+        CRM.fill(a, { title: d.title, icon: d.icon || '' });
+        a.href = `/doc?id=${d.id}`;
+        if (d.id === activeId) { a.classList.add('is-active'); a.setAttribute('aria-current', 'page'); }
+        into.insertBefore(a, before);
+        if (open.has(d.id) && byParent[d.id] && kidsTpl) {
+          const box = kidsTpl.cloneNode(false);
+          box.removeAttribute('data-template');
+          box.setAttribute('data-rendered', '');
+          into.insertBefore(box, before);
+          draw(d.id, box, null);
+        }
+      });
+    };
+    draw(rootId || 'root', list, anchor);
+    list.dataset.state = rows.length ? 'ready' : 'empty';
+  };
+
+  /** Бейдж статусу: map = { value: [текст, 'is-blue'] }. */
+  const BADGE_COMBOS = ['is-blue', 'is-yellow', 'is-green', 'is-red'];
+  CRM.badge = (el, value, map) => {
+    if (!el) return;
+    const [label, combo] = map[value] || [value, ''];
+    el.textContent = label;
+    el.classList.remove(...BADGE_COMBOS);
+    if (combo) el.classList.add(combo);
+  };
+
+  /** Відносний час українською: «5 хв тому», «вчора». */
+  const rtf = new Intl.RelativeTimeFormat('uk', { numeric: 'auto' });
+  CRM.time = (iso) => {
+    if (!iso) return '—';
+    const s = (new Date(iso) - Date.now()) / 1000;
+    const steps = [[60, 'second'], [3600, 'minute', 60], [86400, 'hour', 3600], [604800, 'day', 86400]];
+    if (Math.abs(s) < 60) return 'щойно';
+    for (const [lim, unit, div] of steps.slice(1)) {
+      if (Math.abs(s) < lim) return rtf.format(Math.round(s / div), unit);
+    }
+    return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+  };
+  // 'YYYY-MM-DD' (колонка date) читаємо як місцеву дату, інакше в США вона з'їжджає на день назад
+  CRM.date = (iso, opts = { day: 'numeric', month: 'long', year: 'numeric' }) =>
+    iso ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso).toLocaleDateString('uk-UA', opts) : '—';
+  CRM.name = (p) => (p && (p.full_name || p.email)) || '—';
+
+  // ---------- правки: статус, пріоритет, дедлайн (v0.4) ----------
+  CRM.FEEDBACK_STATUS = { new: ['Нова', 'is-blue'], in_progress: ['В роботі', 'is-yellow'], resolved: ['Закрита', 'is-green'] };
+  /** Етапи проєкту (v0.10). Порядок = порядок у select. */
+  CRM.STAGE = {
+    brief: ['Бриф', ''], design: ['Дизайн', 'is-blue'], review: ['Погодження', 'is-yellow'], development: ['Розробка', 'is-blue'],
+    qa: ['QA', 'is-yellow'], launch: ['Запуск', 'is-green'], support: ['Підтримка', ''],
+  };
+  /** Ризик активного проєкту за найближчою датою (етап або запуск): null | { text, combo, days, date }. */
+  CRM.projectRisk = (p) => {
+    if (!p || p.status !== 'active') return null;
+    const dates = [p.stage_due, p.deadline].filter(Boolean).sort();
+    if (!dates.length) return null;
+    const days = Math.round((new Date(`${dates[0]}T00:00:00`) - new Date(new Date().toDateString())) / 864e5);
+    if (days < 0) return { text: 'Прострочено', combo: 'is-red', days, date: dates[0] };
+    if (days <= 3) return { text: days === 0 ? 'Сьогодні' : `Під ризиком · ${days} дн.`, combo: 'is-yellow', days, date: dates[0] };
+    return null;
+  };
+  CRM.PRIORITY = { urgent: ['Терміново', 'is-red'], high: ['Високий', 'is-yellow'], normal: ['Звичайний', ''], low: ['Низький', ''] };
+  const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+  /** Дедлайн (рядок 'YYYY-MM-DD') → { text, combo, overdue } або null. Для закритої правки без кольору. */
+  CRM.due = (d, closed = false) => {
+    if (!d) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const day = new Date(`${d}T00:00:00`);
+    const diff = Math.round((day - today) / 864e5);
+    const text = diff === 0 ? 'Сьогодні' : diff === 1 ? 'Завтра' : diff === -1 ? 'Вчора'
+      : day.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+    if (closed) return { text, combo: '', overdue: false };
+    const overdue = diff < 0;
+    return { text: overdue ? `Прострочено · ${text}` : text, combo: overdue ? 'is-red' : diff <= 1 ? 'is-yellow' : '', overdue };
+  };
+
+  /** Порядок правок: пріоритет → найближчий дедлайн (без дедлайну в кінці) → новіші. */
+  CRM.feedbackSort = (a, b) =>
+    (PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2)
+    || (a.due_date || '9999').localeCompare(b.due_date || '9999')
+    || String(b.created_at || '').localeCompare(String(a.created_at || ''));
+
+  /** Бейджі правки в рядку: [data-field="status|priority|due"]. Звичайний пріоритет і порожній дедлайн ховаються. */
+  CRM.feedbackBadges = (el, f) => {
+    CRM.badge(el.querySelector('[data-field="status"]'), f.status, CRM.FEEDBACK_STATUS);
+    const pr = el.querySelector('[data-field="priority"]');
+    if (pr) {
+      CRM.badge(pr, f.priority || 'normal', CRM.PRIORITY);
+      pr.hidden = !f.priority || f.priority === 'normal';
+    }
+    const du = el.querySelector('[data-field="due"]');
+    if (du) {
+      const d = CRM.due(f.due_date, f.status === 'resolved');
+      du.hidden = !d;
+      if (d) CRM.badge(du, 'x', { x: [d.text, d.combo] });
+    }
+  };
+
+  /** Toast унизу праворуч. */
+  CRM.toast = (text, ms = 3000) => {
+    const region = $('[data-toast-region]');
+    const tpl = region && region.querySelector('[data-template]');
+    if (!tpl) return console.log('[CRM]', text);
+    const el = tpl.cloneNode(true);
+    el.removeAttribute('data-template');
+    el.textContent = text;
+    region.appendChild(el);
+    setTimeout(() => el.remove(), ms);
+  };
+  CRM.fail = (err) => {
+    console.error('[CRM]', err);
+    CRM.toast(TEXT.error);
+  };
+
+  /** Кастомна дія: CRM.action('approve', (el, event) => {...}) для data-action="approve". */
+  CRM.action = (name, fn) => { actions[name] = fn; };
+
+  /**
+   * Форма: CRM.onSubmit('pin', async (data, form) => {...}) для [data-form="pin"].
+   * Перехоплює сабміт раніше за Webflow. Кнопка блокується на час запиту.
+   */
+  CRM.onSubmit = (key, fn) => { forms[key] = fn; };
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-form]');
+    if (!form) return;
+    // v0.12.1: форма без обробника (модуль ще не підключений) не повинна йти в Webflow Forms — дані лишаються тільки в CRM
+    if (!forms[form.dataset.form]) { e.preventDefault(); e.stopImmediatePropagation(); CRM.toast?.('Ця дія ще недоступна'); return; }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const btn = form.querySelector('[type="submit"]');
+    const data = Object.fromEntries(new FormData(form));
+    form.querySelectorAll('input[type="checkbox"]').forEach((c) => { if (c.name) data[c.name] = c.checked; });
+    if (btn) btn.disabled = true;
+    try {
+      await forms[form.dataset.form](data, form);
+    } catch (err) {
+      CRM.fail(err);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }, true);
+
+  /** Опції для <select data-options="projects | staff | <статичний список>">. data-default="normal" — значення за замовчуванням.
+   *  Статичні списки реєструються в CRM.optionLists (модуль може додати свій: CRM.optionLists['font-license'] = [[v, текст], …]). */
+  const optionsCache = {};
+  CRM.optionLists = {
+    priority: ['low', 'normal', 'high', 'urgent'].map((v) => [v, CRM.PRIORITY[v][0]]),
+    stage: Object.entries(CRM.STAGE).map(([v, [label]]) => [v, label]),
+  };
+  CRM.options = async (kind) => {
+    if (CRM.optionLists[kind]) return CRM.optionLists[kind];
+    if (!optionsCache[kind]) {
+      optionsCache[kind] = (kind === 'projects'
+        ? sb.from('projects').select('id, name').neq('status', 'done').order('name')
+            .then(({ data }) => (data || []).map((p) => [p.id, p.name]))
+        : sb.from('profiles').select('id, full_name, email').in('role', STAFF).order('full_name')
+            .then(({ data }) => (data || []).map((p) => [p.id, CRM.name(p)])));
+    }
+    return optionsCache[kind];
+  };
+  async function fillOne(sel) {
+    const def = sel.dataset.default;
+    const have = new Set([...sel.options].map((o) => o.value));
+    (await CRM.options(sel.dataset.options)).forEach(([v, t]) => {
+      if (!have.has(v)) sel.add(new Option(t, v));
+    });
+    // значення за замовчуванням переживає form.reset()
+    if (def) [...sel.options].forEach((o) => { o.defaultSelected = o.value === def; o.selected = o.value === def; });
+    sel.dataset.filled = '1';
+  }
+  /** Заповнює select[data-options]. Повторний виклик чекає на той самий проміс, тож опції вже на місці. */
+  async function fillSelects(root = document) {
+    await Promise.all($$('select[data-options]', root).map((sel) => sel._crmFill || (sel._crmFill = fillOne(sel))));
+  }
+  CRM.fillSelects = fillSelects;
+
+  // ---------- файли ----------
+  const IMG = /^image\/(png|jpe?g|webp|gif)$/;
+  const MAX = 10 * 1024 * 1024;
+
+  /**
+   * Дропзона: клік, перетягування, Cmd+V (поки відкрита модалка з дропзоною).
+   * Повертає { files, reset }. Прев'ю — у [data-upload-previews] за шаблоном img[data-template].
+   */
+  CRM.dropzone = (zone, { multiple = true } = {}) => {
+    const state = { files: [] };
+    if (!zone) return state;
+    const box = zone.parentElement.querySelector('[data-upload-previews]');
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple, hidden: true });
+    zone.after(input);
+    zone.tabIndex = 0;
+    zone.setAttribute('role', 'button');
+    zone.style.cursor = 'pointer';
+
+    const add = (list) => {
+      const ok = [...list].filter((f) => IMG.test(f.type) && f.size <= MAX);
+      if (ok.length < list.length) CRM.toast('Лише зображення до 10 МБ');
+      state.files = multiple ? state.files.concat(ok) : ok.slice(0, 1);
+      draw();
+    };
+    const label = zone.firstElementChild;
+    const labelText = label?.textContent;
+    const draw = () => {
+      if (box) CRM.render(box, state.files, (el, f) => { el.src = URL.createObjectURL(f); });
+      else if (label) label.textContent = state.files[0] ? `✓ ${state.files[0].name}` : labelText;
+    };
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+    input.addEventListener('change', () => { add(input.files); input.value = ''; });
+    zone.addEventListener('dragover', (e) => e.preventDefault());
+    zone.addEventListener('drop', (e) => { e.preventDefault(); add(e.dataTransfer.files); });
+    document.addEventListener('paste', (e) => {
+      if (!zone.offsetParent) return; // дропзона прихована (модалка закрита) — вставку не чіпаємо
+      const files = [...(e.clipboardData?.files || [])];
+      if (files.length) { e.preventDefault(); add(files); }
+    });
+    state.reset = () => { state.files = []; draw(); };
+    return state;
+  };
+
+  /** Завантаження у Storage. bucket media — приватний (повертає шлях), avatars — публічний (повертає URL). */
+  CRM.upload = async (file, folder, bucket = 'media') => {
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    // avatars: перша папка = id користувача (так вимагає RLS); media: <folder>/<user>/<файл>
+    const path = bucket === 'avatars' ? `${CRM.user.id}/${stamp}` : `${folder}/${CRM.user.id}/${stamp}`;
+    const { error } = await sb.storage.from(bucket).upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw error;
+    return bucket === 'avatars' ? sb.storage.from(bucket).getPublicUrl(path).data.publicUrl : path;
+  };
+
+  /** Тимчасові посилання на приватні файли: { path: url }. */
+  CRM.signedUrls = async (paths) => {
+    const list = [...new Set(paths.filter(Boolean))];
+    if (!list.length) return {};
+    const { data, error } = await sb.storage.from('media').createSignedUrls(list, 3600);
+    if (error) { console.error('[CRM] signedUrls', error); return {}; }
+    return Object.fromEntries(data.filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
+  };
+
+  /** v0.11: прибрати файли з приватного bucket media. Без помилки, якщо прав немає (файл чужий) — запис у БД важливіший. */
+  CRM.removeFiles = async (paths) => {
+    const list = [...new Set((paths || []).filter(Boolean))];
+    if (!list.length) return;
+    try { await sb.storage.from('media').remove(list); } catch (e) { console.warn('[CRM] removeFiles', e); }
+  };
+
+  /** v0.11: видалити проєкт (PM/admin). Просить ввести назву — щоб не видалити випадково.
+   *  Каскадом зникають команда, нотатки, мудборд, передача, звʼязки зі сніпетами й шрифтами;
+   *  правки й Showcase лишаються «без проєкту». Повертає true, якщо видалено. */
+  CRM.deleteProject = async (p) => {
+    if (!p?.id || !CRM.can('pm,admin')) return false;
+    const typed = prompt(`Видалити проєкт «${p.name}»?\n\nЗникнуть команда, нотатки, мудборд і передача. Правки й Showcase залишаться без проєкту.\n\nЩоб підтвердити, введи назву проєкту:`);
+    if (typed == null) return false;
+    if (typed.trim().toLowerCase() !== String(p.name).trim().toLowerCase()) { CRM.toast('Назва не збігається — проєкт не видалено'); return false; }
+    const { data: mood } = await sb.from('moodboard_items').select('path').eq('project_id', p.id).not('path', 'is', null);
+    const { error } = await sb.from('projects').delete().eq('id', p.id);
+    if (error) { CRM.fail(error); return false; }
+    CRM.removeFiles((mood || []).map((m) => m.path));
+    CRM.toast('Проєкт видалено');
+    return true;
+  };
+
+  // ===================================================================
+  // НАВІГАЦІЯ ТА ВХІД
+  // ===================================================================
+  const go = (path) => { if (location.pathname !== path) location.replace(path); };
+  const nextPath = () => {
+    const n = CRM.param('next');
+    return n && n.startsWith('/') && !n.startsWith('//') ? n : cfg.homePath;
+  };
+
+  async function loadProfile() {
+    const { data } = await sb.auth.getSession();
+    CRM.user = data.session?.user || null;
+    if (!CRM.user) return;
+    const { data: profile, error } = await sb.from('profiles').select('*').eq('id', CRM.user.id).single();
+    if (error) console.error('[CRM] profile:', error.message);
+    CRM.profile = profile || null;
+    CRM.role = profile?.role || null;
+  }
+
+  function guard() {
+    const rule = $('[data-crm-guard]')?.dataset.crmGuard || 'public';
+    if (rule === 'public') return true;
+    if (rule === 'guest') return CRM.can('auth') ? (go(nextPath()), false) : true;
+    if (!CRM.user) return go(`${cfg.loginPath}?next=${encodeURIComponent(location.pathname + location.search)}`), false;
+    if (!CRM.can('auth') && !CRM.can(rule)) return go(cfg.pendingPath), false;
+    if (!CRM.can(rule)) return go(CRM.role === 'pending' ? cfg.pendingPath : cfg.homePath), false;
+    return true;
+  }
+
+  CRM.bindUser = () => {
+    $$('[data-crm-user]').forEach((el) => {
+      const key = el.dataset.crmUser;
+      const val = key === 'email' ? CRM.user?.email : CRM.profile?.[key];
+      // Запам'ятовуємо текст із Designer («колего»), щоб повернути його, якщо значення стерли
+      if (el.tagName !== 'IMG' && el.dataset.crmFallback == null) el.dataset.crmFallback = el.textContent;
+      if (val == null || val === '') {
+        if (el.tagName !== 'IMG') el.textContent = el.dataset.crmFallback;
+        return;
+      }
+      if (el.tagName === 'IMG') el.src = val;
+      else el.textContent = val;
+    });
+    const avatar = CRM.profile?.avatar_url || CRM.user?.user_metadata?.avatar_url;
+    if (avatar) $$('[data-crm-avatar]').forEach((el) => {
+      el.style.backgroundImage = `url("${avatar}")`;
+      el.style.backgroundSize = 'cover';
+      el.style.backgroundPosition = 'center';
+    });
+  };
+
+  // Webflow ставить у нові форми англійські заглушки («Submit», «Please wait...», «Example text»).
+  // Замінюємо їх тут, щоб не правити кожну форму в Designer. Свої тексти з Designer не чіпаємо.
+  const SUBMIT = { pin: 'Закріпити', project: 'Створити проєкт', 'feedback-new': 'Створити правку', comment: 'Надіслати',
+    'showcase-item': 'Зберегти', 'leave-new': 'Надіслати запит', holiday: 'Додати', 'showcase-cat': 'Додати', 'quiz-q': 'Зберегти', user: 'Зберегти', profile: 'Зберегти', 'ref-new': 'Додати',
+    review: 'Надіслати на погодження', 'access-request': 'Попросити доступ' };
+  const PLACEHOLDER = {
+    title: 'Назва', name: 'Назва', client: 'Клієнт', summary: 'Кілька речень: що за проєкт і для кого',
+    url: 'https://', live_url: 'https://', staging_url: 'https://…webflow.io', figma_url: 'https://figma.com/…',
+    webflow_url: 'https://webflow.com/design/…', github_url: 'https://github.com/…', clickup_url: 'https://app.clickup.com/…',
+    drive_url: 'https://drive.google.com/…', source_url: 'https://', description: 'Що саме, де і як має бути',
+    code: 'Встав код', foundry: 'Напр. Pangram Pangram', pageviews_limit: 'Напр. 10000', notes: 'Нотатки',
+    comment: 'Коментар (необовʼязково)', clickup_email: 'Лише якщо в ClickUp інша пошта', leave_vacation_hours: 'Порожньо = з ClickUp',
+    leave_sick_hours: 'Порожньо = з ClickUp', label: 'Назва категорії', question: 'Текст питання', options: 'Перший рядок — правильна відповідь, далі інші варіанти', explanation: 'Що пояснити після помилки (необовʼязково)', hours: '8', login: 'Логін або email', password: 'Пароль', extra: '2FA, коди, підказки',
+    full_name: 'Імʼя та прізвище', reason: 'Навіщо потрібен доступ (необовʼязково)', price: 'Напр. 15', q: 'Пошук…', tags: 'Напр. hero, scroll, typography', note: 'Що саме сподобалось',
+  };
+  function localizeForms() {
+    $$('input[type="submit"]').forEach((b) => {
+      if (b.value === 'Submit') b.value = SUBMIT[b.closest('form')?.dataset.form] || 'Зберегти';
+      if (b.dataset.wait === 'Please wait...') b.dataset.wait = 'Зберігаю…';
+    });
+    // Webflow підставляє «Example text», а поля з WHTML лишаються взагалі без підказки — заповнюємо обидва випадки з мапи
+    $$('input[name], textarea[name]').forEach((i) => {
+      if (i.placeholder === 'Example text' || (!i.getAttribute('placeholder') && PLACEHOLDER[i.name])) i.placeholder = PLACEHOLDER[i.name] || '';
+    });
+    // v0.12.1 a11y: Webflow ставить у label for="<name>", а не id поля — скрінрідер і клік по підпису не працюють.
+    // Звʼязуємо підпис із полем у тому ж .form_field (поле без id отримує стабільний id з імені форми й поля).
+    $$('.form_field').forEach((f) => {
+      const l = f.querySelector('label');
+      const c = f.querySelector('input:not([type="hidden"]):not([type="checkbox"]), select, textarea');
+      if (!l || !c || (c.labels && c.labels.length)) return;
+      if (!c.id) c.id = `f-${c.closest('form')?.dataset.form || 'x'}-${c.name || Math.random().toString(36).slice(2, 7)}`;
+      l.htmlFor = c.id;
+    });
+  }
+
+  function bindUI() {
+    localizeForms();
+    $$('[data-crm-role]').forEach((el) => { if (!CRM.can(el.dataset.crmRole)) el.remove(); });
+    // v0.15: новачку в меню лишаємо тільки дозволене (Онбординг) — інші пункти без data-crm-role все одно перекинуть на онбординг
+    if (CRM.role === 'pending') {
+      $$('.app_nav [data-nav]:not([data-crm-role])').forEach((el) => el.remove());
+      $$('.app_nav-group').forEach((g) => { g.hidden = true; });
+    }
+    CRM.bindUser();
+    tidyNav();
+    // активний пункт меню
+    const path = location.pathname.replace(/\/$/, '') || '/';
+    $$('[data-nav]').forEach((a) => {
+      const on = a.dataset.nav.split(',').map((s) => s.trim()).includes(path);
+      a.classList.toggle('is-active', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    // v0.15.2: меню скролиться окремо — показуємо активний пункт, якщо він нижче видимої частини
+    const act = $('.app_nav [data-nav].is-active');
+    if (act) requestAnimationFrame(() => act.scrollIntoView({ block: 'nearest' }));
+    // хлібні крихти = заголовок сторінки (модуль може перевизначити через CRM.crumbs)
+    const h1 = $('[data-page-content] h1');
+    if (h1) CRM.crumbs(h1.textContent.trim());
+  }
+  /**
+   * v0.20 Меню коротше:
+   *  - «Моя робота» прибрано (її зміст — на Головній: «Сьогодні», «Мої проєкти», «Мої правки»); сторінка /my-work лишається за посиланням;
+   *  - Онбординг ховається для команди, що зареєструвалась понад 30 днів тому (новачкам і поточній сторінці — видно);
+   *  - заголовки груп (.app_nav-group) згортають свої пункти; група з активною сторінкою завжди відкрита;
+   *    за замовчуванням відкриті «Робота» й активна група; вибір людини пам'ятаємо в localStorage 'crm-nav-closed'.
+   */
+  function tidyNav() {
+    const nav = $('.app_nav');
+    if (!nav) return;
+    const path = location.pathname.replace(/\/$/, '') || '/';
+    const onPath = (a) => a.dataset.nav.split(',').map((x) => x.trim()).includes(path);
+    $$('.app_nav [data-nav]').forEach((a) => {
+      const href = a.getAttribute('href');
+      if (href === '/my-work' && !onPath(a)) a.remove();
+      if (href === '/onboarding' && CRM.role !== 'pending' && !onPath(a)
+          && CRM.profile?.created_at && Date.now() - new Date(CRM.profile.created_at) > 30 * 864e5) a.remove();
+    });
+    if (CRM.role === 'pending') return;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('crm-nav-closed') || 'null'); } catch (e) {}
+    const groups = $$('.app_nav-group').filter((g) => !g.hidden);
+    groups.forEach((g, i) => {
+      const links = [];
+      for (let n = g.nextElementSibling; n && !n.classList.contains('app_nav-group'); n = n.nextElementSibling) if (n.matches('[data-nav]')) links.push(n);
+      if (!links.length) { g.hidden = true; return; }
+      const name = g.textContent.trim();
+      const active = links.some(onPath);
+      const closed = !active && (saved ? saved.includes(name) : i > 0);
+      g.setAttribute('role', 'button');
+      g.tabIndex = 0;
+      g.classList.add('is-collapsible');
+      const apply = (shut) => {
+        g.setAttribute('aria-expanded', String(!shut));
+        g.classList.toggle('is-closed', shut);
+        links.forEach((l) => { l.hidden = shut; });
+      };
+      apply(closed);
+      const toggle = () => {
+        const shut = g.getAttribute('aria-expanded') === 'true';
+        apply(shut);
+        const list = groups.filter((x) => x.classList.contains('is-closed')).map((x) => x.textContent.trim());
+        try { localStorage.setItem('crm-nav-closed', JSON.stringify(list)); } catch (e) {}
+      };
+      g.addEventListener('click', toggle);
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    });
+  }
+
+  /** Хлібні крихти: рядок або масив [[текст, href], …, [поточна]] — тоді попередні рівні клікабельні. */
+  CRM.crumbs = (items) => {
+    const c = $('[data-crm-crumbs]');
+    if (!c) return;
+    if (!Array.isArray(items)) { c.textContent = items; return; }
+    c.replaceChildren();
+    items.forEach(([text, href], i) => {
+      if (i) {
+        const sep = document.createElement('span');
+        sep.className = 'crumbs_sep';
+        sep.setAttribute('aria-hidden', 'true');
+        sep.textContent = '/';
+        c.appendChild(sep);
+      }
+      const last = i === items.length - 1;
+      const node = document.createElement(last || !href ? 'span' : 'a');
+      node.className = last ? 'crumbs_current' : 'crumbs_link';
+      node.textContent = text;
+      if (node.tagName === 'A') node.href = href;
+      if (last) node.setAttribute('aria-current', 'page');
+      c.appendChild(node);
+    });
+  };
+
+  // вхід email + пароль (capture: раніше за Webflow)
+  const errorEl = () => $('[data-element="auth-error"]');
+  function showError(msg) {
+    const el = errorEl();
+    if (!el) return CRM.toast(msg);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-element="auth-login"]');
+    if (!form) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const fd = new FormData(form);
+    const btn = form.querySelector('[type="submit"]');
+    if (btn) btn.disabled = true;
+    const { error } = await sb.auth.signInWithPassword({
+      email: String(fd.get('email') || '').trim(),
+      password: String(fd.get('password') || ''),
+    });
+    if (btn) btn.disabled = false;
+    if (error) return showError(error.status === 400 ? TEXT.invalid : TEXT.failed);
+    location.replace(nextPath());
+  }, true);
+  document.addEventListener('input', (e) => {
+    if (e.target.closest('[data-element="auth-login"]') && errorEl()) errorEl().style.display = 'none';
+  });
+
+  sb.auth.onAuthStateChange((event) => {
+    const rule = $('[data-crm-guard]')?.dataset.crmGuard;
+    if (event === 'SIGNED_OUT' && rule && rule !== 'public' && rule !== 'guest') location.replace(cfg.loginPath);
+  });
+
+  // ===================================================================
+  // МОДАЛКИ
+  // ===================================================================
+  let lastFocus = null;
+  CRM.modal = {
+    open(key) {
+      const m = $(`[data-modal="${key}"]`);
+      if (!m) return null;
+      lastFocus = document.activeElement;
+      m.classList.add('is-open');
+      html.classList.add('crm-modal-open');
+      fillSelects(m);
+      setTimeout(() => m.querySelector('input:not([type="hidden"]), textarea, select')?.focus(), 30);
+      m.dispatchEvent(new CustomEvent('crm:open', { bubbles: true }));
+      return m;
+    },
+    close(m) {
+      m = m || $('[data-modal].is-open');
+      if (!m) return;
+      m.classList.remove('is-open');
+      if (!$('[data-modal].is-open')) html.classList.remove('crm-modal-open');
+      lastFocus?.focus?.();
+    },
+  };
+
+  // ===================================================================
+  // ТЕМА
+  // ===================================================================
+  const media = matchMedia('(prefers-color-scheme: dark)');
+  CRM.theme = (value) => {
+    try {
+      if (value === 'system') localStorage.removeItem('crm-theme');
+      else if (value) localStorage.setItem('crm-theme', value);
+    } catch (e) {}
+    let saved = null;
+    try { saved = localStorage.getItem('crm-theme'); } catch (e) {}
+    html.setAttribute('data-theme', saved || (media.matches ? 'dark' : 'light'));
+    $$('[data-theme-switch] [data-theme-value]').forEach((o) =>
+      o.classList.toggle('is-active', o.dataset.themeValue === (saved || 'system')));
+  };
+  media.addEventListener?.('change', () => CRM.theme());
+
+  // ===================================================================
+  // ТАБИ З ПАНЕЛЯМИ
+  // [data-tabs="g"] > [data-tab="v"] + будь-де на сторінці [data-tab-panel="g:v"] (кілька панелей на один таб — ок).
+  // Хеш #v відкриває таб v; хеш #id відкриває таб, у панелі якого є елемент з цим id (напр. /project?id=…#handoff).
+  // ===================================================================
+  function showTabPanels(group, value, remember) {
+    const panels = $$(`[data-tab-panel^="${group}:"]`);
+    if (!panels.length) return;
+    panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== `${group}:${value}`; });
+    if (remember) history.replaceState(null, '', `${location.pathname}${location.search}#${value}`);
+  }
+  CRM.showTab = (group, value) => {
+    const g = $(`[data-tabs="${group}"]`);
+    const tab = g && $(`[data-tab="${value}"]`, g);
+    if (!tab) return;
+    $$('[data-tab]', g).forEach((t) => { t.classList.toggle('is-active', t === tab); t.setAttribute('aria-selected', t === tab); });
+    showTabPanels(group, value, false);
+  };
+  function initTabPanels() {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    $$('[data-tabs]').forEach((g) => {
+      const group = g.dataset.tabs;
+      if (!$(`[data-tab-panel^="${group}:"]`)) return;
+      let value = hash && $(`[data-tab="${CSS.escape(hash)}"]`, g) ? hash : null;
+      if (!value && hash) {
+        const target = document.getElementById(hash)?.closest(`[data-tab-panel^="${group}:"]`);
+        if (target) value = target.dataset.tabPanel.split(':')[1];
+      }
+      value ||= ($('[data-tab].is-active', g) || $('[data-tab]', g))?.dataset.tab;
+      if (value) CRM.showTab(group, value);
+    });
+  }
+
+  // ===================================================================
+  // МОБІЛЬНЕ МЕНЮ: data-action="toggle-nav" перемикає html.crm-nav-open (вигляд — у Head сайту)
+  // ===================================================================
+  function setNav(open) {
+    html.classList.toggle('crm-nav-open', open);
+    $$('[data-action="toggle-nav"]').forEach((b) => b.setAttribute('aria-expanded', String(open)));
+  }
+  matchMedia('(min-width: 768px)').addEventListener?.('change', (e) => { if (e.matches) setNav(false); });
+
+  // ===================================================================
+  // ПОШУК Cmd+K
+  // ===================================================================
+  const KIND = { project: 'Проєкт', snippet: 'Сніпет', feedback: 'Правка', font: 'Шрифт', access: 'Доступ', showcase: 'Showcase', doc: 'Документ', ref: 'Референс' };
+  let searchInput = null;
+  let searchTimer = null;
+  function openSearch() {
+    const m = CRM.modal.open('search');
+    if (!m) return;
+    if (!searchInput) {
+      const slot = m.querySelector('[data-search-field]');
+      searchInput = Object.assign(document.createElement('input'), {
+        type: 'search', className: slot.className, placeholder: slot.textContent.trim(), autocomplete: 'off',
+      });
+      searchInput.setAttribute('aria-label', 'Пошук');
+      searchInput.style.border = '0';
+      searchInput.style.outline = 'none';
+      slot.replaceWith(searchInput);
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(runSearch, 200);
+      });
+    }
+    searchInput.value = '';
+    showQuick('');
+    setTimeout(() => searchInput.focus(), 30);
+  }
+  // Порожній запит: нещодавно відкриті сторінки + розділи меню (лише доступні ролі — решту bindUI вже прибрав)
+  const RECENT_KEY = 'crm-recent';
+  const recentPages = () => { try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; } };
+  CRM.rememberPage = () => {
+    if (['/login', '/pending', '/', '/app'].includes(location.pathname)) return;
+    const url = location.pathname + location.search;
+    const title = document.title.replace(/\s*\|\s*Gapsy CRM$/, '').trim();
+    if (!title) return;
+    const list = [{ title, url }, ...recentPages().filter((r) => r.url !== url)].slice(0, 6);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch {}
+  };
+  const navPages = () => $$('[data-nav]').map((a) => ({ title: a.textContent.trim(), url: a.getAttribute('href') }));
+  function quickRows(q) {
+    const low = q.toLowerCase();
+    const match = (r) => !low || r.title.toLowerCase().includes(low);
+    const here = location.pathname + location.search;
+    return [
+      ...(pinsCache || []).filter((r) => r.url !== here && match(r)).slice(0, low ? 3 : 6).map((r) => ({ ...r, type: 'Закріплене' })),
+      ...recentPages().filter((r) => r.url !== here && match(r)).slice(0, low ? 3 : 5).map((r) => ({ ...r, type: 'Нещодавнє' })),
+      ...navPages().filter(match).slice(0, low ? 3 : 12).map((r) => ({ ...r, type: 'Розділ' })),
+    ];
+  }
+  function showQuick(q) {
+    const items = CRM.render('search', quickRows(q), (el, r) => {
+      el.href = r.url;
+      if (/^https?:/i.test(r.url)) { el.target = '_blank'; el.rel = 'noopener'; } // закріплене зовнішнє посилання
+    });
+    items[0]?.classList.add('is-active');
+  }
+  async function runSearch() {
+    const q = searchInput.value.trim();
+    if (q.length < 2) return showQuick(q);
+    const { data, error } = await sb.rpc('search_all', { q });
+    if (error) return CRM.fail(error);
+    if (searchInput.value.trim() !== q) return; // поки чекали відповідь, запит змінився
+    const rows = [...data.map((r) => ({ ...r, type: KIND[r.kind] || r.kind })), ...quickRows(q).filter((r) => r.type === 'Розділ')];
+    const items = CRM.render('search', rows, (el, r) => {
+      el.href = r.url;
+      if (r.kind === 'showcase' || r.kind === 'ref') { el.target = '_blank'; el.rel = 'noopener'; }
+    });
+    items[0]?.classList.add('is-active');
+  }
+  /** v0.16: пошук сторінок CRM для вибору (закріплене): q < 2 — розділи меню й нещодавнє, інакше search_all + розділи.
+   *  Повертає [{ title, url, type }]. */
+  CRM.searchPages = async (q) => {
+    q = String(q || '').trim();
+    const low = q.toLowerCase();
+    const match = (r) => !low || r.title.toLowerCase().includes(low);
+    const nav = navPages().filter(match).map((r) => ({ ...r, type: 'Розділ' }));
+    const recent = recentPages().filter(match).map((r) => ({ ...r, type: 'Нещодавнє' }));
+    if (q.length < 2) return [...nav, ...recent];
+    const { data, error } = await sb.rpc('search_all', { q });
+    if (error) { console.error('[CRM] search', error); return nav; }
+    const found = data.filter((r) => /^\//.test(r.url || '')).map((r) => ({ title: r.title, url: r.url, type: KIND[r.kind] || r.kind }));
+    const seen = new Set();
+    return [...found, ...nav, ...recent].filter((r) => !seen.has(r.url) && seen.add(r.url));
+  };
+
+  function searchKeys(e) {
+    const m = $('[data-modal="search"].is-open');
+    if (!m) return;
+    const items = $$('[data-list="search"] > [data-rendered]');
+    if (!items.length) return;
+    let i = items.findIndex((x) => x.classList.contains('is-active'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[i]?.classList.remove('is-active');
+      i = (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[i].classList.add('is-active');
+      items[i].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && items[i]) {
+      e.preventDefault();
+      items[i].click();
+    }
+  }
+
+  // ===================================================================
+  // v0.16 ЗАКРІПЛЕНЕ (швидкий доступ): будь-яка сторінка CRM або зовнішнє посилання.
+  // Таблиця pins (title, url): url — або шлях сайту (/project?id=…, /doc?id=…, /leave), або http(s)://…
+  // Зірочка у верхній панелі [data-action="pin-page"]: ядро саме додає її перед перемикачем теми
+  // (клас як у перемикача), стан — клас is-pinned + aria-pressed. Подія crm:pins — список змінився.
+  // ===================================================================
+  const PIN_KIND = [[/^\/project\?/, 'Проєкт'], [/^\/doc\?/, 'Документ'], [/^\/feedback-item\?/, 'Правка'], [/^\/snippet\?/, 'Сніпет'],
+    [/^\/fonts\?id=/, 'Шрифт'], [/^\/access\?id=/, 'Доступ'], [/^\/reviews\?id=/, 'Погодження']];
+  /** Підпис під закріпленим: тип сторінки CRM або домен зовнішнього посилання. */
+  CRM.pinLabel = (url) => {
+    if (/^\//.test(url)) return PIN_KIND.find(([re]) => re.test(url))?.[1] || 'Розділ CRM';
+    try { return new URL(url).host.replace(/^www\./, ''); } catch { return url; }
+  };
+  /** Нормалізує адресу: посилання на цей сайт → шлях (/project?id=…), зовнішнє — лише http(s). Інакше null. */
+  CRM.pinUrl = (u) => {
+    u = String(u || '').trim();
+    if (!u) return null;
+    try {
+      const x = new URL(u, location.origin);
+      if (x.origin === location.origin) return x.pathname + x.search + x.hash;
+      if (/^https?:$/.test(x.protocol) && /^https?:\/\//i.test(u)) return x.href;
+    } catch {}
+    return null;
+  };
+  let pinsCache = null;
+  const herePath = () => location.pathname + location.search;
+  const pageTitle = () => document.title.replace(/\s*\|\s*Gapsy CRM$/, '').trim() || $('[data-page-content] h1')?.textContent.trim() || 'Сторінка';
+  /** Мої закріплені (кеш; force — перечитати з бази). */
+  CRM.pins = async (force) => {
+    if (pinsCache && !force) return pinsCache;
+    const { data, error } = await sb.from('pins').select('id, title, url').order('sort').order('created_at');
+    if (error) { console.error('[CRM] pins', error); return pinsCache || []; }
+    pinsCache = data;
+    syncPinButton();
+    document.dispatchEvent(new CustomEvent('crm:pins', { detail: data }));
+    return data;
+  };
+  CRM.pin = async (title, url) => {
+    const u = CRM.pinUrl(url);
+    if (!u) throw new Error('Посилання має починатися з https:// або вести на сторінку CRM');
+    if ((await CRM.pins()).some((p) => p.url === u)) return CRM.toast('Уже в швидкому доступі');
+    const { error } = await sb.from('pins').insert({ title: String(title || '').trim().slice(0, 120) || u, url: u });
+    if (error) throw error;
+    await CRM.pins(true);
+    CRM.toast('Додано в швидкий доступ');
+  };
+  CRM.unpin = async (id) => {
+    const { error } = await sb.from('pins').delete().eq('id', id);
+    if (error) return CRM.fail(error);
+    await CRM.pins(true);
+    CRM.toast('Прибрано зі швидкого доступу');
+  };
+  function syncPinButton() {
+    const on = (pinsCache || []).some((p) => p.url === herePath());
+    $$('[data-action="pin-page"]').forEach((b) => {
+      const t = on ? 'Прибрати зі швидкого доступу' : 'Додати в швидкий доступ';
+      b.classList.toggle('is-pinned', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', t);
+      b.title = t;
+    });
+  }
+  async function togglePinPage() {
+    const p = (await CRM.pins()).find((x) => x.url === herePath());
+    if (p) return CRM.unpin(p.id);
+    try { await CRM.pin(pageTitle(), herePath()); } catch (err) { CRM.fail(err); }
+  }
+  const STAR = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z"/></svg>';
+  function addPinButton() {
+    if (['/app', '/login', '/pending', '/onboarding', '/'].includes(location.pathname)) return;
+    if (!$('[data-action="pin-page"]')) {
+      const theme = $('[data-action="toggle-theme"]');
+      if (!theme) return;
+      const b = document.createElement('a');
+      b.href = '#';
+      b.className = theme.className;
+      b.dataset.action = 'pin-page';
+      b.setAttribute('role', 'button');
+      b.innerHTML = STAR;
+      const size = theme.querySelector('svg')?.getAttribute('width');
+      if (size) b.querySelector('svg').setAttribute('width', size), b.querySelector('svg').setAttribute('height', size);
+      theme.before(b);
+    }
+    syncPinButton();
+  }
+
+  // ===================================================================
+  // СПОВІЩЕННЯ
+  // ===================================================================
+  async function loadNotifications() {
+    if (!CRM.can('auth')) return;
+    const { data, error } = await sb.from('notifications')
+      .select('id, title, url, read_at, created_at').order('created_at', { ascending: false }).limit(20);
+    if (error) return console.error('[CRM] notifications', error);
+    CRM.render('notifications', data.map((n) => ({ ...n, time: CRM.time(n.created_at) })), (el, n) => {
+      el.href = n.url || '#';
+      el.classList.toggle('is-unread', !n.read_at);
+      el.dataset.id = n.id;
+    });
+    const unread = data.filter((n) => !n.read_at).length;
+    $$('[data-notif-count]').forEach((b) => {
+      b.textContent = unread > 9 ? '9+' : unread;
+      b.style.display = unread ? '' : 'none';
+    });
+  }
+  function watchNotifications() {
+    sb.channel('crm-notifications')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${CRM.user.id}` },
+        (p) => { loadNotifications(); CRM.toast(p.new.title); })
+      .subscribe();
+  }
+  async function readNotifications(id) {
+    let q = sb.from('notifications').update({ read_at: new Date().toISOString() }).is('read_at', null);
+    if (id) q = q.eq('id', id);
+    await q;
+    loadNotifications();
+  }
+  // v0.11: очистити всі свої сповіщення (кнопка data-action="notifications-clear" у панелі)
+  async function clearNotifications() {
+    if (!confirm('Очистити всі сповіщення?')) return;
+    const { error } = await sb.from('notifications').delete().eq('user_id', CRM.user.id);
+    if (error) return CRM.fail(error);
+    loadNotifications();
+  }
+
+  // ===================================================================
+  // ДЕЛЕГОВАНІ ПОДІЇ
+  // ===================================================================
+  document.addEventListener('click', async (e) => {
+    // клік по фону модалки
+    if (e.target.matches('[data-modal]')) return CRM.modal.close(e.target);
+
+    const panel = $('[data-notif-panel]');
+    if (panel && panel.classList.contains('is-open') && !e.target.closest('[data-notif-panel], [data-action="toggle:notifications"]')) {
+      panel.classList.remove('is-open');
+    }
+
+    // сповіщення: позначити прочитаним при переході
+    const notif = e.target.closest('[data-list="notifications"] > [data-rendered]');
+    if (notif?.classList.contains('is-unread')) readNotifications(notif.dataset.id);
+
+    // таби
+    const tab = e.target.closest('[data-tabs] [data-tab]');
+    if (tab) {
+      e.preventDefault();
+      const group = tab.closest('[data-tabs]');
+      $$('[data-tab]', group).forEach((t) => {
+        t.classList.toggle('is-active', t === tab);
+        t.setAttribute('aria-selected', t === tab);
+      });
+      showTabPanels(group.dataset.tabs, tab.dataset.tab, true);
+      group.dispatchEvent(new CustomEvent('crm:tab', { bubbles: true, detail: { group: group.dataset.tabs, value: tab.dataset.tab } }));
+      return;
+    }
+
+    // тема в профілі
+    const themeOpt = e.target.closest('[data-theme-switch] [data-theme-value]');
+    if (themeOpt) { e.preventDefault(); return CRM.theme(themeOpt.dataset.themeValue); }
+
+    // вхід через Google / вихід
+    if (e.target.closest('[data-element="auth-google"]')) {
+      e.preventDefault();
+      const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + nextPath() } });
+      if (error) showError(TEXT.failed);
+      return;
+    }
+    if (e.target.closest('[data-element="auth-logout"]')) {
+      e.preventDefault();
+      await sb.auth.signOut();
+      return location.replace(cfg.loginPath);
+    }
+
+    if (html.classList.contains('crm-nav-open') && e.target.closest('.app_nav a, .app_user a')) setNav(false);
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const a = el.dataset.action;
+    if (a === 'open:search') { e.preventDefault(); return openSearch(); }
+    if (a.startsWith('open:')) { e.preventDefault(); return CRM.modal.open(a.slice(5)); }
+    if (a === 'close') { e.preventDefault(); return CRM.modal.close(el.closest('[data-modal]')); }
+    if (a === 'toggle:notifications') { e.preventDefault(); return panel?.classList.toggle('is-open'); }
+    if (a === 'notifications-read-all') { e.preventDefault(); return readNotifications(); }
+    if (a === 'notifications-clear') { e.preventDefault(); return clearNotifications(); }
+    if (a === 'pin-page') { e.preventDefault(); return togglePinPage(); }
+    if (a === 'toggle-nav') { e.preventDefault(); return setNav(!html.classList.contains('crm-nav-open')); }
+    if (a === 'toggle-theme') {
+      e.preventDefault();
+      return CRM.theme(html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+    if (actions[a]) { e.preventDefault(); actions[a](el, e); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && $('[data-modal="search"]')) {
+      e.preventDefault();
+      return openSearch();
+    }
+    if (e.key === 'Escape') {
+      setNav(false);
+      $('[data-notif-panel]')?.classList.remove('is-open');
+      return CRM.modal.close();
+    }
+    searchKeys(e);
+  });
+
+  // ===================================================================
+  // МОДУЛІ
+  // ===================================================================
+  function loadModules() {
+    MODULES.forEach((name) => {
+      const els = $$(`[data-element="${name}"]`);
+      if (!els.length) return;
+      const s = document.createElement('script');
+      s.src = `${cfg.modulesBase}${name}.js`;
+      s.onload = () => els.forEach((el) => {
+        try { registry[name]?.(el, CRM); } catch (err) { console.error(`[CRM] ${name}:`, err); }
+      });
+      s.onerror = () => console.error(`[CRM] Не завантажився модуль ${name}`);
+      document.head.appendChild(s);
+    });
+  }
+
+  // ===================================================================
+  // СТАРТ
+  // ===================================================================
+  const domReady = new Promise((r) =>
+    document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', r, { once: true }) : r());
+
+  Promise.all([loadProfile(), domReady])
+    .then(() => {
+      if (!guard()) return;
+      CRM.theme();
+      bindUI();
+      initTabPanels();
+      html.classList.remove('crm-loading');
+      if (CRM.can('auth') && $('[data-notif-panel]')) { loadNotifications(); watchNotifications(); }
+      if (CRM.can('staff')) { addPinButton(); CRM.pins(); } // v0.16 швидкий доступ
+      loadModules();
+      setTimeout(() => CRM.rememberPage(), 2000);
+      document.dispatchEvent(new CustomEvent('crm:ready', { detail: CRM }));
+    })
+    .catch((err) => {
+      console.error('[CRM] init:', err);
+      html.classList.remove('crm-loading');
+    });
+})();

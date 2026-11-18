@@ -9,7 +9,11 @@
  *    з шаблоном піна (a[data-template] > [data-field="n"]), підказка [data-mark-hint], блок [data-mark-form] з формою data-form="mark"
  *    (textarea note) і дією mark-cancel; на сторінці список data-list="marks" (поля n, note, author, file) з діями
  *    mark-open, mark-toggle (+ [data-mark-check] з is-done), mark-delete. Лічильник [data-field="marks"] на мініатюрі.
- * v0.11: shot-delete у модалці image, comment-delete у рядку коментаря (свій або PM/admin); при видаленні правки скріни прибираються зі Storage. */
+ * v0.11: shot-delete у модалці image, comment-delete у рядку коментаря (свій або PM/admin); при видаленні правки скріни прибираються зі Storage.
+ * v0.21: «Ревʼю за посиланням» — картка «Жива сторінка» (будує JS, перед скрінами) і повноекранний режим ревʼю:
+ *   сторінка з feedback.page_url у iframe (?crm-review=1), ліворуч піни, Коментувати / Переглядати, ширини 1440 / 768 / 390.
+ *   Піни на сайті малює review-bridge.js (має стояти у Footer сайту); зберігаються у feedback_marks з file_id = null і anchor {w, py, dh}.
+ *   Відкрити одразу: /feedback-item?id=…#review. Потрібна міграція 023_url_review. Стилі — блок 17 у Head. */
 CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, toast, action, signedUrls, time, date, name, crumbs, param, can, badge, due, PRIORITY, FEEDBACK_STATUS }) => {
   const id = param('id');
   const $ = (s) => root.querySelector(s);
@@ -128,13 +132,14 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
 
   async function loadMarks() {
     const { data, error: err } = await sb.from('feedback_marks')
-      .select('id, file_id, x, y, note, done, created_by, created_at, author:profiles!feedback_marks_created_by_fkey(full_name, email)')
+      .select('id, file_id, x, y, note, done, created_by, created_at, anchor, author:profiles!feedback_marks_created_by_fkey(full_name, email)')
       .eq('feedback_id', id).order('created_at');
     if (err) return CRM.fail(err);
     marks = data.map((m, i) => ({ ...m, n: i + 1 }));
     drawShots();
     drawMarkList();
     drawStage();
+    review.sync();
   }
 
   function drawMarkList() {
@@ -142,7 +147,7 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
       ...m,
       author: name(m.author),
       time: time(m.created_at),
-      file: `Скрін ${shots.find((s) => s.id === m.file_id)?.n || ''}`,
+      file: m.file_id ? `Скрін ${shots.find((s) => s.id === m.file_id)?.n || ''}` : `На сторінці · ${m.anchor?.w || ''}`,
     })), (el, m) => {
       el.dataset.id = m.id;
       el.classList.toggle('is-done', m.done);
@@ -212,7 +217,9 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
   action('open-image', (el) => openShot(el.dataset.fileId || el.closest('[data-file-id]')?.dataset.fileId));
   action('mark-open', (el) => {
     const m = marks.find((x) => x.id === el.closest('[data-id]')?.dataset.id);
-    if (m) openShot(m.file_id, m.id);
+    if (!m) return;
+    if (m.file_id) openShot(m.file_id, m.id);
+    else review.open(m.id);
   });
 
   // клік по скріну в модалці → чернетка позначки
@@ -255,9 +262,9 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     const m = marks.find((x) => x.id === el.closest('[data-id]')?.dataset.id);
     if (!m) return;
     m.done = !m.done;
-    drawMarkList(); drawStage(); drawShots();
+    drawMarkList(); drawStage(); drawShots(); review.sync();
     const { error: err } = await sb.from('feedback_marks').update({ done: m.done }).eq('id', m.id);
-    if (err) { m.done = !m.done; drawMarkList(); drawStage(); drawShots(); CRM.fail(err); }
+    if (err) { m.done = !m.done; drawMarkList(); drawStage(); drawShots(); review.sync(); CRM.fail(err); }
   });
 
   action('mark-delete', async (el) => {
@@ -274,8 +281,360 @@ CRM.module('feedback-item', async (root, { sb, user, render, onSubmit, modal, to
     if (!imageModal.classList.contains('is-open')) { draft = null; openFile = null; }
   }).observe(imageModal, { attributes: true, attributeFilter: ['class'] });
 
+
+  // =================================================================
+  // v0.21 РЕВʼЮ ЗА ПОСИЛАННЯМ: жива сторінка в iframe + review-bridge.js на сайті
+  // =================================================================
+  // review_width окремим запитом: до міграції 023 колонки немає, і основний select не має падати
+  const { data: rw } = await sb.from('feedback').select('review_width').eq('id', id).maybeSingle();
+  if (rw?.review_width) f.review_width = rw.review_width;
+  const review = (() => {
+    const WIDTHS = [1440, 768, 390];
+    const WLABEL = { 1440: 'Десктоп', 768: 'Планшет', 390: 'Мобайл' };
+    const mk = (t, c, text) => { const e = document.createElement(t); if (c) e.className = c; if (text != null) e.textContent = text; return e; };
+    const btn = (c, text, act) => { const b = mk('button', c, text); b.type = 'button'; if (act) b.dataset.rv = act; return b; };
+    let width = WIDTHS.includes(f.review_width) ? f.review_width : 1440;
+    let mode = 'comment';
+    let ui = null;          // елементи режиму ревʼю, коли відкритий
+    let ready = false;      // міст відповів
+    let onPage = true;      // у iframe та сама сторінка, що в page_url
+    let draft = null;       // {x, y, py, dh} з мосту
+    let focusAfter = null;  // id піна, до якого прокрутити після ready
+    let waitTimer = null;
+    let failed = false;     // міст так і не відповів
+
+    const safeUrl = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x : null; } catch (e) { return null; } };
+    const target = () => safeUrl(f.page_url || '');
+    const normPath = (p) => (p || '/').replace(/\/+$/, '') || '/';
+    const urlPins = () => marks.filter((m) => !m.file_id && m.anchor);
+    const pinsHere = () => urlPins().filter((m) => (m.anchor.w || 1440) === width);
+
+    // ---------- картка «Жива сторінка» на сторінці правки ----------
+    const card = mk('section', 'card rv_card');
+    card.dataset.reviewCard = '';
+    const head = mk('div', 'card_header');
+    head.append(mk('div', 'section_title', 'Жива сторінка'));
+    const count = mk('span', 'list_meta');
+    head.append(count);
+    const body = mk('div', 'rv_card-body');
+    const urlLine = mk('a', 'rv_card-url');
+    urlLine.target = '_blank'; urlLine.rel = 'noopener';
+    const openBtn = btn('button is-small', 'Відкрити ревʼю', 'open');
+    const editBtn = btn('button is-text is-small', 'Змінити посилання', 'edit');
+    const form = mk('form', 'rv_card-form');
+    form.innerHTML = '<input class="form-input" name="url" type="url" required placeholder="https://site.webflow.io/сторінка" aria-label="Посилання на сторінку для ревʼю">'
+      + '<button class="button is-small" type="submit">Зберегти</button>';
+    const help = mk('div', 'list_meta rv_card-help', 'Сторінка відкриється жива, з анімаціями. Піни ставляться прямо на ній — на сайті має стояти review-bridge.js.');
+    body.append(urlLine, openBtn, editBtn, form, help);
+    card.append(head, body);
+    const filesList = root.querySelector('[data-list="feedback-files"]');
+    const before = filesList?.closest('section') || filesList;
+    if (before) before.before(card); else root.append(card);
+
+    function drawCard() {
+      const t = target();
+      const n = urlPins().filter((m) => !m.done).length;
+      count.textContent = urlPins().length ? `Відкритих пінів: ${n}` : '';
+      urlLine.hidden = !t;
+      if (t) { urlLine.href = t.href; urlLine.textContent = t.host + (t.pathname === '/' ? '' : t.pathname); }
+      openBtn.hidden = !t;
+      editBtn.hidden = !t;
+      form.hidden = !!t && !card.classList.contains('is-editing');
+      help.hidden = !!t;
+      if (!form.hidden) form.elements.url.value = f.page_url || '';
+    }
+    card.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-rv]')?.dataset.rv;
+      if (a === 'open') open();
+      if (a === 'edit') { card.classList.add('is-editing'); drawCard(); form.elements.url.focus(); }
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const t = safeUrl(form.elements.url.value.trim());
+      if (!t) return toast('Посилання має починатися з https://');
+      const { error: err } = await sb.from('feedback').update({ page_url: t.href }).eq('id', id);
+      if (err) return CRM.fail(err);
+      f.page_url = t.href;
+      card.classList.remove('is-editing');
+      const link = $('[data-item="page_url"]');
+      if (link) { link.href = t.href; link.parentElement.hidden = false; }
+      drawCard();
+      toast('Посилання збережено');
+    });
+
+    // ---------- повноекранний режим ----------
+    function build() {
+      const wrap = mk('div', 'rv');
+      wrap.setAttribute('role', 'dialog');
+      wrap.setAttribute('aria-modal', 'true');
+      wrap.setAttribute('aria-label', 'Ревʼю сторінки');
+      const side = mk('aside', 'rv_side');
+      const top = mk('div', 'rv_top');
+      const back = btn('button is-text is-small rv_back', '← До правки', 'close');
+      const ttl = mk('div', 'rv_title', f.title);
+      top.append(back, ttl);
+      const bar = mk('div', 'rv_bar');
+      const modes = mk('div', 'view_switch rv_modes');
+      modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Режим');
+      [['comment', 'Коментувати'], ['browse', 'Переглядати']].forEach(([k, l]) => { const b = btn('view_switch-btn', l, `mode:${k}`); modes.append(b); });
+      const widths = mk('div', 'view_switch rv_widths');
+      widths.setAttribute('role', 'group'); widths.setAttribute('aria-label', 'Ширина');
+      WIDTHS.forEach((w) => { const b = btn('view_switch-btn', String(w), `width:${w}`); b.title = WLABEL[w]; widths.append(b); });
+      bar.append(modes, widths);
+      const status = mk('div', 'rv_status');
+      status.setAttribute('role', 'status');
+      const pinForm = mk('form', 'rv_form');
+      pinForm.innerHTML = '<textarea class="form-input" name="note" maxlength="500" required rows="3" placeholder="Що змінити тут?" aria-label="Текст піна"></textarea>'
+        + '<div class="rv_form-actions"><button class="button is-small" type="submit">Зберегти пін</button>'
+        + '<button class="button is-text is-small" type="button" data-rv="cancel">Скасувати</button></div>';
+      const list = mk('div', 'rv_list');
+      const other = mk('div', 'rv_other');
+      side.append(top, bar, status, pinForm, list, other);
+      const stage = mk('div', 'rv_stage');
+      const scaleBox = mk('div', 'rv_scale');
+      const frame = mk('iframe', 'rv_frame');
+      frame.title = 'Сторінка для ревʼю';
+      frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox');
+      frame.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+      const zoom = mk('div', 'rv_zoom');
+      scaleBox.append(frame);
+      stage.append(scaleBox, zoom);
+      wrap.append(side, stage);
+      document.body.append(wrap);
+      return { wrap, side, back, modes, widths, status, pinForm, list, other, stage, scaleBox, frame, zoom };
+    }
+
+    function post(msg) {
+      const t = target();
+      if (!ui || !t || !ui.frame.contentWindow) return;
+      ui.frame.contentWindow.postMessage({ __crm: 1, ...msg }, t.origin);
+    }
+    const pinPayload = () => pinsHere().map((m) => ({ id: m.id, n: m.n, x: m.x, y: m.y, py: typeof m.anchor.py === 'number' ? m.anchor.py : undefined, done: !!m.done }));
+    function sendState() {
+      post({ type: 'mode', mode: onPage ? mode : 'browse' });
+      post({ type: 'pins', pins: onPage ? pinPayload() : [] });
+    }
+
+    function fit() {
+      if (!ui) return;
+      const W = ui.stage.clientWidth - 32;
+      const H = ui.stage.clientHeight - 32;
+      const k = Math.min(1, W / width);
+      ui.frame.style.width = `${width}px`;
+      ui.frame.style.height = `${Math.max(320, Math.floor(H / k))}px`;
+      ui.scaleBox.style.width = `${Math.round(width * k)}px`;
+      ui.scaleBox.style.height = `${Math.round(H)}px`;
+      ui.frame.style.transform = k < 1 ? `scale(${k})` : '';
+      ui.zoom.textContent = `${width} · ${Math.round(k * 100)}%`;
+    }
+
+    function setStatus(text, kind) {
+      if (!ui) return;
+      ui.status.textContent = text;
+      ui.status.className = `rv_status${kind ? ` is-${kind}` : ''}`;
+    }
+    function statusDefault() {
+      if (!ready && failed) {
+        setStatus('Сайт не відповідає: на ньому немає review-bridge.js або він не дозволяє вбудовування. Переглядати можна, піни — ні.', 'warn');
+        const a = mk('a', 'button is-text is-small', 'Відкрити в новій вкладці ↗');
+        a.href = target().href; a.target = '_blank'; a.rel = 'noopener';
+        return ui.status.append(' ', a);
+      }
+      if (!ready) return setStatus('Завантажуємо сторінку…');
+      if (!onPage) return setStatus('Ти на іншій сторінці сайту — піни прив’язані до сторінки правки.', 'warn');
+      setStatus(mode === 'comment' ? 'Клікни по сторінці, щоб поставити пін. Скрол і анімації працюють.' : 'Сторінка повністю інтерактивна. Щоб ставити піни — «Коментувати».');
+    }
+
+    function drawUi() {
+      if (!ui) return;
+      ui.modes.querySelectorAll('[data-rv^="mode:"]').forEach((b) => {
+        const on = b.dataset.rv === `mode:${onPage ? mode : 'browse'}`;
+        b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on);
+        b.disabled = !onPage && b.dataset.rv === 'mode:comment';
+      });
+      ui.widths.querySelectorAll('[data-rv^="width:"]').forEach((b) => {
+        const on = b.dataset.rv === `width:${width}`;
+        b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on);
+      });
+      ui.pinForm.hidden = !draft;
+      // список пінів цієї ширини
+      ui.list.replaceChildren();
+      const here = pinsHere();
+      if (!here.length) ui.list.append(mk('div', 'list_meta rv_empty', mode === 'comment' ? 'Пінів на цій ширині ще немає.' : 'Пінів на цій ширині немає.'));
+      here.forEach((m) => {
+        const row = mk('div', `rv_pin${m.done ? ' is-done' : ''}`);
+        row.dataset.id = m.id;
+        const num = btn('rv_pin-n', String(m.n), 'focus');
+        num.setAttribute('aria-label', `Показати пін ${m.n} на сторінці`);
+        const txt = mk('div', 'rv_pin-text');
+        txt.append(mk('div', 'rv_pin-note', m.note), mk('div', 'list_meta', `${name(m.author)} · ${time(m.created_at)}`));
+        const acts = mk('div', 'rv_pin-actions');
+        const done = btn('button is-text is-small', m.done ? 'Повернути' : 'Готово', 'toggle');
+        acts.append(done);
+        if (m.created_by === user.id || can('pm,admin')) acts.append(btn('button is-text is-small', 'Видалити', 'delete'));
+        row.append(num, txt, acts);
+        ui.list.append(row);
+      });
+      const rest = urlPins().filter((m) => (m.anchor.w || 1440) !== width);
+      ui.other.replaceChildren();
+      if (rest.length) {
+        const by = {};
+        rest.forEach((m) => { by[m.anchor.w] = (by[m.anchor.w] || 0) + 1; });
+        ui.other.append(mk('span', 'list_meta', 'На інших ширинах: '));
+        Object.keys(by).forEach((w) => ui.other.append(btn('button is-text is-small', `${w} · ${by[w]}`, `width:${w}`)));
+      }
+      statusDefault();
+    }
+
+    function load() {
+      const t = target();
+      if (!ui || !t) return;
+      ready = false; failed = false; onPage = true; draft = null;
+      clearTimeout(waitTimer);
+      const u = new URL(t.href);
+      u.searchParams.set('crm-review', '1');
+      ui.frame.src = u.href;
+      drawUi();
+      waitTimer = setTimeout(() => { if (!ready && ui) { failed = true; drawUi(); } }, 8000);
+    }
+
+    function onMessage(e) {
+      const t = target();
+      if (!ui || !t || e.source !== ui.frame.contentWindow || e.origin !== t.origin) return;
+      const d = e.data || {};
+      if (d.__crm !== 1) return;
+      if (d.type === 'ready') {
+        ready = true;
+        clearTimeout(waitTimer);
+        onPage = normPath(d.path) === normPath(t.pathname);
+        if (!onPage) draft = null;
+        sendState();
+        drawUi();
+        if (focusAfter && onPage) { post({ type: 'focus', id: focusAfter }); focusAfter = null; }
+      } else if (d.type === 'newpin' && mode === 'comment' && onPage) {
+        const num = (k) => (typeof d[k] === 'number' && Number.isFinite(d[k]) ? d[k] : null);
+        const x = num('x'); const y = num('y');
+        if (x == null || y == null || x < 0 || x > 1 || y < 0 || y > 1) return;
+        draft = { x, y, py: Math.max(0, Math.round(num('py') || 0)), dh: Math.max(0, Math.round(num('dh') || 0)) };
+        drawUi();
+        setTimeout(() => ui?.pinForm.elements.note.focus(), 20);
+      } else if (d.type === 'pinClick') {
+        const row = ui.list.querySelector(`[data-id="${CSS.escape(String(d.id))}"]`);
+        if (row) { row.scrollIntoView({ block: 'nearest' }); row.classList.add('is-active'); setTimeout(() => row.classList.remove('is-active'), 1600); }
+      }
+    }
+
+    async function savePin(e) {
+      e.preventDefault();
+      const note = ui.pinForm.elements.note.value.trim();
+      if (!draft || !note) return;
+      const btnSave = ui.pinForm.querySelector('[type="submit"]');
+      btnSave.disabled = true;
+      const { error: err } = await sb.from('feedback_marks').insert({
+        feedback_id: id, file_id: null, x: draft.x, y: draft.y, note: note.slice(0, 500),
+        anchor: { w: width, py: draft.py, dh: draft.dh },
+      });
+      btnSave.disabled = false;
+      if (err) {
+        if (/anchor|file_id|null value/i.test(err.message || '')) return toast('Спершу запусти міграцію 023_url_review у Supabase');
+        return CRM.fail(err);
+      }
+      draft = null;
+      ui.pinForm.reset();
+      toast('Пін додано');
+      await loadMarks(); // → sync()
+    }
+
+    async function setWidth(w) {
+      if (!WIDTHS.includes(w) || w === width) return;
+      width = w;
+      fit();
+      draft = null;
+      sendState();
+      drawUi();
+      const { error: err } = await sb.from('feedback').update({ review_width: w }).eq('id', id);
+      if (!err) f.review_width = w; // без міграції колонки ще немає — ширина просто не запам'ятається
+    }
+
+    function onUiClick(e) {
+      const b = e.target.closest('[data-rv]');
+      if (!b || !ui.wrap.contains(b)) return;
+      const a = b.dataset.rv;
+      const rowId = b.closest('[data-id]')?.dataset.id;
+      const m = rowId && marks.find((x) => x.id === rowId);
+      if (a === 'close') close();
+      else if (a.startsWith('mode:')) { mode = a.slice(5); if (mode !== 'comment') draft = null; sendState(); drawUi(); }
+      else if (a.startsWith('width:')) setWidth(Number(a.slice(6)));
+      else if (a === 'cancel') { draft = null; ui.pinForm.reset(); sendState(); drawUi(); }
+      else if (a === 'focus' && m) post({ type: 'focus', id: m.id });
+      else if (a === 'toggle' && m) toggleDirect(m);
+      else if (a === 'delete' && m) deleteDirect(m);
+    }
+    async function toggleDirect(m) {
+      m.done = !m.done; drawMarkList(); sync();
+      const { error: err } = await sb.from('feedback_marks').update({ done: m.done }).eq('id', m.id);
+      if (err) { m.done = !m.done; drawMarkList(); sync(); CRM.fail(err); }
+    }
+    async function deleteDirect(m) {
+      if (!confirm(`Видалити пін ${m.n}?`)) return;
+      const { error: err } = await sb.from('feedback_marks').delete().eq('id', m.id);
+      if (err) return CRM.fail(err);
+      loadMarks();
+    }
+    function onKey(e) {
+      if (e.key !== 'Escape' || !ui) return;
+      e.stopPropagation();
+      if (draft) { draft = null; ui.pinForm.reset(); sendState(); drawUi(); } else close();
+    }
+
+    let lastFocus = null;
+    function open(focusId) {
+      if (!target()) { card.classList.add('is-editing'); drawCard(); form.elements.url.focus(); return toast('Додай посилання на сторінку'); }
+      focusAfter = focusId || null;
+      const fm = focusId && marks.find((x) => x.id === focusId);
+      if (fm?.anchor?.w && WIDTHS.includes(fm.anchor.w)) width = fm.anchor.w;
+      if (ui) { if (focusAfter && ready) { post({ type: 'focus', id: focusAfter }); focusAfter = null; } return; }
+      lastFocus = document.activeElement;
+      ui = build();
+      document.documentElement.classList.add('crm-modal-open', 'crm-review-open');
+      ui.wrap.addEventListener('click', onUiClick);
+      ui.pinForm.addEventListener('submit', savePin);
+      // якщо перший ready загубився (міст стартував раніше за слухача) — питаємо ще раз після load
+      ui.frame.addEventListener('load', () => post({ type: 'hello' }));
+      window.addEventListener('message', onMessage);
+      window.addEventListener('resize', fit);
+      document.addEventListener('keydown', onKey, true);
+      fit();
+      load();
+      history.replaceState(null, '', `${location.pathname}${location.search}#review`);
+      setTimeout(() => ui?.back.focus(), 30);
+    }
+    function close() {
+      if (!ui) return;
+      clearTimeout(waitTimer);
+      window.removeEventListener('message', onMessage);
+      window.removeEventListener('resize', fit);
+      document.removeEventListener('keydown', onKey, true);
+      ui.wrap.remove();
+      ui = null; ready = false; draft = null;
+      document.documentElement.classList.remove('crm-review-open');
+      if (!document.querySelector('[data-modal].is-open')) document.documentElement.classList.remove('crm-modal-open');
+      history.replaceState(null, '', `${location.pathname}${location.search}`);
+      lastFocus?.focus?.();
+    }
+    function sync() {
+      drawCard();
+      if (!ui) return;
+      if (ready) sendState();
+      drawUi();
+    }
+    drawCard();
+    return { open, close, sync };
+  })();
+
   drawShots();
-  loadMarks();
+  await loadMarks();
+  if (location.hash === '#review') review.open();
 
   // ---------- коментарі ----------
   async function loadComments() {

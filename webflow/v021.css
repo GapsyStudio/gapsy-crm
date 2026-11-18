@@ -1,0 +1,43 @@
+  /* 17. v0.21 Ревʼю за посиланням: картка «Жива сторінка» і повноекранний режим (елементи створює feedback-item.js) */
+  .rv_form[hidden], .rv_card-form[hidden], .rv_card-body > [hidden] { display: none; }
+  .rv_card .card_header { margin-bottom: 0.75rem; }
+  .rv_card-body { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+  .rv_card-url { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; color: inherit; }
+  .rv_card-form { display: flex; flex: 1 1 100%; gap: 0.5rem; }
+  .rv_card-form .form-input { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+  .rv_card-help { flex: 1 1 100%; white-space: normal; }
+  .rv { position: fixed; inset: 0; z-index: 1000; display: grid; grid-template-columns: 20rem minmax(0, 1fr); background: var(--background--subtle, #f4f4f4); }
+  .rv_side { display: flex; flex-direction: column; gap: 0.75rem; min-height: 0; padding: 1rem; overflow-y: auto; border-right: 1px solid var(--border--default, #e2e2e2); background: var(--background--primary, #fff); }
+  .rv_top { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .rv_back { margin-left: -0.5rem; }
+  .rv_title { font-size: 1rem; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+  .rv_bar { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .rv_bar .view_switch { margin-bottom: 0; }
+  .rv_bar .view_switch-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .rv_status { font-size: 0.8125rem; line-height: 1.45; color: var(--text--secondary, #797979); }
+  .rv_status.is-warn { padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: var(--tag--yellow-bg, #fdf3d8); color: var(--tag--yellow-text, #8a6a12); }
+  .rv_form { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border-radius: 0.5rem; background: var(--background--subtle, #f4f4f4); }
+  .rv_form .form-input { margin-bottom: 0; resize: vertical; }
+  .rv_form-actions { display: flex; gap: 0.5rem; }
+  .rv_list { display: flex; flex-direction: column; }
+  .rv_pin { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.25rem 0.75rem; padding: 0.75rem 0; border-top: 1px solid var(--border--default, #e2e2e2); transition: background-color .3s ease; }
+  .rv_pin.is-active { background: var(--background--subtle, #f4f4f4); }
+  .rv_pin.is-done .rv_pin-note { color: var(--text--secondary, #797979); text-decoration: line-through; }
+  .rv_pin-n { width: 1.75rem; height: 1.75rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50% 50% 50% 0; background: var(--brand--coral, #fe6f61); color: #fff; font-family: inherit; font-size: 0.75rem; font-weight: 600; line-height: 1; cursor: pointer; }
+  .rv_pin.is-done .rv_pin-n { background: #9a9a9a; }
+  .rv_pin-text { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+  .rv_pin-note { font-size: 0.875rem; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .rv_pin-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .rv_empty { padding: 0.5rem 0; }
+  .rv_other { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+  .rv_other:empty { display: none; }
+  .rv_stage { position: relative; min-width: 0; min-height: 0; display: flex; justify-content: center; padding: 1rem; overflow: hidden; }
+  .rv_scale { position: relative; flex: none; overflow: hidden; border-radius: 0.5rem; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 32px rgba(0,0,0,.10); }
+  .rv_frame { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #fff; }
+  .rv_zoom { position: absolute; right: 1.5rem; bottom: 1.5rem; padding: 0.25rem 0.5rem; border-radius: 0.375rem; background: rgba(31,31,31,.72); color: #fff; font-size: 0.75rem; font-variant-numeric: tabular-nums; pointer-events: none; }
+  @media (max-width: 767px) {
+    .rv { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .rv_side { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--border--default, #e2e2e2); }
+    .rv_stage { padding: 0.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .rv_pin { transition: none; } }

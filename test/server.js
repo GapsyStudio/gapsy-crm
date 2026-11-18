@@ -170,3 +170,21 @@ http.createServer((req, res) => {
   if (f && fs.existsSync(f)) { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' }); return res.end(fs.readFileSync(f)); }
   res.writeHead(404); res.end('nf');
 }).listen(8765, () => console.log('up'));
+
+// v0.21: «чужий» сайт для ревʼю на іншому origin (localhost:8766) з review-bridge.js
+const SITE = (title, extra = '') => `<!doctype html><html><head><title>${title}</title><style>body{margin:0;font:16px sans-serif}section{height:900px;border-bottom:1px solid #ccc;padding:40px}
+@media (max-width:800px){section{height:1400px}}</style></head><body><nav><a id="nav-about" href="/about">About</a> <button id="cta" onclick="window.__ctaClicks=(window.__ctaClicks||0)+1">CTA</button></nav>
+<section id="s1"><h1>${title}</h1></section><section id="s2">2</section><section id="s3">3</section>${extra}
+<script defer src="/review-bridge.js" data-crm-origin="${process.env.CRM_ORIGIN || 'http://localhost:8765'}"></script></body></html>`;
+http.createServer((req, res) => {
+  const u = req.url.split('?')[0];
+  if (u === '/review-bridge.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end(fs.readFileSync(path.join(__dirname, '..', 'review-bridge.js'))); }
+  if (u === '/' || u === '/landing') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(SITE('Landing')); }
+  if (u === '/about') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(SITE('About')); }
+  if (u === '/evil2') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<iframe src="http://127.0.0.1:8766/evil"></iframe>'); }
+  if (u === '/evil') { // сторінка без мосту, що шле фейкові піни
+    res.writeHead(200, { 'content-type': 'text/html' });
+    return res.end('<script>setInterval(()=>top.postMessage({__crm:1,type:"newpin",x:.5,y:.5,py:10,dh:100,vw:1},"*"),300)</script>evil');
+  }
+  res.writeHead(404); res.end('nf');
+}).listen(8766);

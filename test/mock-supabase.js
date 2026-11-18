@@ -87,7 +87,14 @@ function builder(table) {
     delete() { window.__calls.push(['delete', table]); return b; },
     then(res) {
       let data = FIX[table] || [];
-      if (st.insert) data = { id: 'new1' };
+      if (st.insert) {
+        data = { id: 'new1' };
+        // v0.21: позначки зберігаємо у фікстурі, щоб перечитування їх бачило
+        if (table === 'feedback_marks' && window.__PERSIST_MARKS) {
+          const row = { id: `mk${(FIX.feedback_marks || []).length + 1}`, done: false, created_by: 'u1', created_at: new Date().toISOString(), author: { full_name: 'Нелія' }, ...st.insert };
+          (FIX.feedback_marks = FIX.feedback_marks || []).push(row); data = row;
+        }
+      }
       else if (st.upsert) data = { id: 'h1', status: 'draft', ...st.upsert };
       else if (st.update && st.single) {
         const idf = st.filters.find(([k]) => k === 'id');
